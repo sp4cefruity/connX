@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: connx
+      POSTGRES_PASSWORD: connx
+      POSTGRES_DB: connx
+    ports:
+      - "5432:5432"
+    volumes:
+      - connx_db_data:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U connx"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://connx:connx@db:5432/connx
+      ROUTING_PROVIDER: osrm
+      GEOCODING_PROVIDER: nominatim
+      FRONTEND_ORIGIN: http://localhost:3000
+      SESSION_SECRET: change-me-in-production
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  connx_db_data:
