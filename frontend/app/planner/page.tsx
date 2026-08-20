@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import ConnXLogo from "@/components/ConnXLogo";
 import LocationField from "@/components/LocationField";
 import MapView from "@/components/MapView";
 import RedSpotPanel from "@/components/RedSpotPanel";
@@ -122,10 +123,8 @@ export default function PlannerPage() {
     <div className="grid h-screen grid-cols-1 md:grid-cols-[360px_1fr]">
       <aside className="flex flex-col overflow-y-auto border-r border-border bg-panel">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <div className="font-display text-base font-bold">
-            conn<span className="text-route-a">X</span>
-          </div>
-          <Link href="/" className="font-mono text-[11px] text-ink-dim">
+          <ConnXLogo size={18} />
+          <Link href="/" className="font-mono text-[11px] text-ink-dim hover:text-ink transition-colors">
             ← Home
           </Link>
         </div>

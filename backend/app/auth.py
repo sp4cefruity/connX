@@ -34,10 +34,10 @@ def get_or_create_user(
 ) -> User:
     s = _serializer()
 
-    user_id: uuid.UUID | None = None
+    user_id: str | None = None
     if connx_device:
         try:
-            user_id = uuid.UUID(s.loads(connx_device))
+            user_id = s.loads(connx_device)
         except (BadSignature, ValueError):
             user_id = None
 
@@ -50,7 +50,7 @@ def get_or_create_user(
         db.refresh(user)
         response.set_cookie(
             COOKIE_NAME,
-            s.dumps(str(user.id)),
+            s.dumps(user.id),
             httponly=True,
             samesite="lax",
             max_age=60 * 60 * 24 * 365,

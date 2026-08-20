@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.database import init_db
 from app.routers import geocode, red_spots, routes
 
 settings = get_settings()
@@ -23,6 +24,8 @@ app.add_middleware(
 app.include_router(geocode.router)
 app.include_router(routes.router)
 app.include_router(red_spots.router)
+
+init_db()
 
 
 @app.get("/api/health")

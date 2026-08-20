@@ -153,16 +153,45 @@ body {
 
 /* ---------- MapLibre chrome overrides to match the dark UI ---------- */
 .maplibregl-ctrl-attrib {
-  background: rgba(18, 19, 29, 0.7) !important;
-  color: #8a90a6 !important;
+  background: rgba(18, 19, 29, 0.85) !important;
+  color: #6b7194 !important;
+  font-size: 10px !important;
+  border-radius: 4px !important;
+  padding: 2px 6px !important;
 }
 .maplibregl-ctrl-attrib a {
   color: #8a90a6 !important;
 }
+.maplibregl-ctrl-attrib a:hover {
+  color: #5ee6c4 !important;
+}
 .maplibregl-ctrl-group {
   background: #12131d !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
 }
 .maplibregl-ctrl-group button {
   filter: invert(1) brightness(1.6);
+}
+.maplibregl-ctrl-group button:hover {
+  background: rgba(94, 230, 196, 0.15) !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ---------- scrollbar ---------- */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
 }

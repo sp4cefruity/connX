@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ConnXLogo from "@/components/ConnXLogo";
 import HeroField from "@/components/HeroField";
 
 const SEQUENCE = [
@@ -31,9 +32,7 @@ export default function LandingPage() {
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-50 mix-blend-difference flex items-center justify-between px-5 py-6 sm:px-10">
-        <div className="font-display text-lg font-bold tracking-tight">
-          conn<span className="text-route-a">X</span>
-        </div>
+        <ConnXLogo size={24} />
         <Link
           href="/planner"
           className="rounded-full border border-white/35 px-4 py-2 font-mono text-xs uppercase tracking-widest"
@@ -52,12 +51,11 @@ export default function LandingPage() {
           </div>
 
           <h1 className="max-w-[14ch] font-display text-[42px] font-semibold leading-[0.98] tracking-tight sm:text-[64px] lg:text-[88px]">
-            Take the route that's <em className="not-italic text-route-a">yours</em>.
+            Take the route that&apos;s <em className="not-italic text-route-a">yours</em>.
           </h1>
 
-          <p className="mt-6 max-w-[46ch] text-base leading-relaxed text-ink-dim sm:text-lg">
-            Compare routes, spot overlaps, and avoid places you don't want to
-            pass through — without ever handing over where you actually go.
+          <p className="mt-6 max-w-[46ch] font-display text-base italic leading-relaxed text-ink-dim sm:text-lg">
+            To connect hearts, hearts so much bigger than maps.
           </p>
 
           <div className="mt-11 flex flex-wrap items-center gap-6">
@@ -107,9 +105,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="flex flex-wrap items-center justify-between gap-3.5 border-t border-border px-5 py-10 sm:px-10 lg:px-16">
-        <div className="font-display text-sm">
-          conn<span className="text-route-a">X</span>
-        </div>
+        <ConnXLogo size={18} />
         <p className="font-mono text-[11.5px] tracking-wide text-ink-dim">
           NO ACCOUNT REQUIRED · RED SPOTS NEVER LEAVE YOUR DEVICE
         </p>

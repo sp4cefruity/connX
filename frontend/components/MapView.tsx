@@ -5,9 +5,32 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
 import type { LonLat, OverlapSegment, RedSpot, RouteResult } from "@/lib/types";
 
-// Free, no-key vector basemap. Swap for a self-hosted style / Mapbox style
-// URL in production — see README.
-const MAP_STYLE = "https://demotiles.maplibre.org/style.json";
+// Raster dark basemap — pre-rendered tile images, far faster than vector tiles.
+// Three subdomains for parallel download; retina @2x for sharp labels.
+const RASTER_STYLE = {
+  version: 8,
+  sources: {
+    "carto-dark": {
+      type: "raster" as const,
+      tiles: [
+        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+        "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+      ],
+      tileSize: 256,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    },
+  },
+  layers: [
+    {
+      id: "carto-dark-layer",
+      type: "raster" as const,
+      source: "carto-dark",
+      maxzoom: 19,
+    },
+  ],
+};
 
 function toLineString(points: LonLat[]) {
   return {
@@ -21,8 +44,6 @@ function toLineString(points: LonLat[]) {
 }
 
 function toCircle(spot: RedSpot, steps = 48) {
-  // Rough metre-radius circle around a lon/lat point (equirectangular,
-  // matches the backend's approximation — fine at this zoom level).
   const coords: [number, number][] = [];
   const metersPerDegLat = 111_320;
   const cosLat = Math.cos((spot.latitude * Math.PI) / 180);
@@ -63,9 +84,10 @@ export default function MapView({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE,
+      style: RASTER_STYLE as any,
       center: [85.8245, 20.2961],
       zoom: 12,
+      maxZoom: 19,
     });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     mapRef.current = map;
@@ -73,46 +95,91 @@ export default function MapView({
     map.on("load", () => {
       loadedRef.current = true;
 
-      map.addSource("primary-route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-      map.addSource("comparison-route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-      map.addSource("overlap-segments", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-      map.addSource("red-spots", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addSource("primary-route", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addSource("comparison-route", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addSource("overlap-segments", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addSource("red-spots", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
 
+      // Comparison route — underneath primary
       map.addLayer({
         id: "comparison-route-line",
         type: "line",
         source: "comparison-route",
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#B98CFF", "line-width": 4, "line-opacity": 0.85 },
+        paint: {
+          "line-color": "#B98CFF",
+          "line-width": 5,
+          "line-opacity": 0.8,
+          "line-blur": 1,
+        },
+      });
+      // Primary route — on top with glow
+      map.addLayer({
+        id: "primary-route-glow",
+        type: "line",
+        source: "primary-route",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#5EE6C4",
+          "line-width": 10,
+          "line-opacity": 0.25,
+          "line-blur": 6,
+        },
       });
       map.addLayer({
         id: "primary-route-line",
         type: "line",
         source: "primary-route",
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#5EE6C4", "line-width": 4, "line-opacity": 0.9 },
+        paint: {
+          "line-color": "#5EE6C4",
+          "line-width": 4,
+          "line-opacity": 0.95,
+        },
       });
+      // Overlap segments — thick red on top of everything
       map.addLayer({
         id: "overlap-line",
         type: "line",
         source: "overlap-segments",
         layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#FF5A36", "line-width": 6, "line-opacity": 0.9 },
+        paint: {
+          "line-color": "#FF5A36",
+          "line-width": 7,
+          "line-opacity": 0.92,
+          "line-blur": 1,
+        },
       });
       map.addLayer({
         id: "red-spot-fill",
         type: "fill",
         source: "red-spots",
-        paint: { "fill-color": "#FF5A36", "fill-opacity": 0.12 },
+        paint: { "fill-color": "#FF5A36", "fill-opacity": 0.1 },
       });
       map.addLayer({
         id: "red-spot-outline",
         type: "line",
         source: "red-spots",
-        paint: { "line-color": "#FF5A36", "line-width": 1.5, "line-dasharray": [2, 2], "line-opacity": 0.6 },
+        paint: {
+          "line-color": "#FF5A36",
+          "line-width": 1.5,
+          "line-dasharray": [3, 2],
+          "line-opacity": 0.55,
+        },
       });
 
-      // apply any data that arrived before load finished
       applyData();
     });
 
@@ -154,6 +221,7 @@ export default function MapView({
       features: redSpots.map((s) => toCircle(s)),
     });
 
+    // Fit bounds to show both routes
     const allPoints = [
       ...(primaryRoute?.geometry ?? []),
       ...(comparisonRoute?.geometry ?? []),
