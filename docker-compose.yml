@@ -1,8 +1,6 @@
-version: "3.9"
-
 services:
   db:
-    image: postgis/postgis:16-3.4
+    image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: connx
@@ -26,6 +24,7 @@ services:
       DATABASE_URL: postgresql+psycopg2://connx:connx@db:5432/connx
       ROUTING_PROVIDER: osrm
       GEOCODING_PROVIDER: nominatim
+      ENVIRONMENT: development
       FRONTEND_ORIGIN: http://localhost:3000
       SESSION_SECRET: change-me-in-production
     ports:
@@ -33,6 +32,25 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # Optional: containerized frontend for a single-command full stack.
+  # Off by default so `docker compose up` still gives the fast native
+  # `npm run dev` workflow most contributors want day-to-day. Opt in with:
+  #   docker compose --profile full up --build
+  # NEXT_PUBLIC_API_URL points at localhost:8000, not the in-network
+  # "backend" hostname, because this value ships to the USER'S BROWSER,
+  # which is outside the Docker network and can only reach the backend
+  # through its published host port.
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    profiles: ["full"]
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
 
 volumes:
   connx_db_data:

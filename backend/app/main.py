@@ -1,3 +1,12 @@
+import sys
+from pathlib import Path
+
+# Direct execution (`python app/main.py`) only puts backend/app on
+# sys.path, which breaks `import app.*`; add backend/ itself.
+_BACKEND_ROOT = str(Path(__file__).resolve().parent.parent)
+if _BACKEND_ROOT not in sys.path:
+    sys.path.insert(0, _BACKEND_ROOT)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,13 +22,27 @@ app = FastAPI(
     version="0.1.0",
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[settings.frontend_origin],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if settings.environment == "development":
+    # Match any port on localhost/127.0.0.1 so every developer's frontend
+    # works regardless of which port `npm run dev` happened to bind to —
+    # no more syncing FRONTEND_ORIGIN by hand across machines.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):\d+$",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # Production: lock down to the exact configured origin(s). Never widen
+    # this to a regex/wildcard once real user traffic is involved.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[settings.frontend_origin],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 app.include_router(geocode.router)
 app.include_router(routes.router)
