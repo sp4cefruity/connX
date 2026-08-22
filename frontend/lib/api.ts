@@ -38,9 +38,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export async function geocode(query: string): Promise<GeocodeResult[]> {
+export async function geocode(
+  query: string,
+  opts?: { signal?: AbortSignal }
+): Promise<GeocodeResult[]> {
   if (!query.trim()) return [];
-  return request(`/api/geocode?q=${encodeURIComponent(query)}`);
+  return request(`/api/geocode?q=${encodeURIComponent(query)}`, { signal: opts?.signal });
 }
 
 export async function compareRoutes(params: {

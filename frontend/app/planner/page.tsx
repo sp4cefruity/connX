@@ -1,14 +1,38 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import ConnXLogo from "@/components/ConnXLogo";
 import LocationField from "@/components/LocationField";
-import MapView from "@/components/MapView";
 import RedSpotPanel from "@/components/RedSpotPanel";
 import ResultsPanel from "@/components/ResultsPanel";
 import { ApiError, createRedSpot, deleteRedSpot, listRedSpots, recommendRoutes } from "@/lib/api";
 import type { GeocodeResult, LonLat, RedSpot, RouteResult, ScoredRoute, Sensitivity, TravelMode } from "@/lib/types";
+
+// maplibre-gl is a large dependency (200KB+ gzipped) that touches WebGL and
+// `window` at module scope, which is incompatible with the server. A static
+// import makes it part of the initial route bundle Next.js has to ship and
+// hydrate before *anything* on this page is interactive — that's the actual
+// cause of the multi-second load, not SSR of the component's output itself.
+// `next/dynamic` with `ssr: false` moves it into its own chunk that's
+// fetched only in the browser, after hydration, off the critical path. The
+// sidebar (what people interact with first) becomes interactive immediately;
+// the map streams in a beat later behind a lightweight skeleton.
+const MapView = dynamic(() => import("@/components/MapView"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full w-full items-center justify-center bg-[#08080F]">
+      <div className="flex items-center gap-2 font-mono text-[11px] text-ink-dim">
+        <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" opacity="0.3" />
+          <path d="M8 2a6 6 0 0 1 6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        Loading map…
+      </div>
+    </div>
+  ),
+});
 
 type Endpoint = { label: string; point: LonLat | null };
 
@@ -225,6 +249,7 @@ export default function PlannerPage() {
           overlapSegments={selected?.overlap.segments}
           redSpots={redSpots}
           onMapClick={handleMapClick}
+          picking={pickingRedSpot}
         />
 
         <ResultsPanel

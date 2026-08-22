@@ -28,6 +28,16 @@ const RASTER_STYLE = {
       type: "raster" as const,
       source: "carto-dark",
       maxzoom: 19,
+      // Lift the raw tile's blacks and flatten its contrast so the theme
+      // reads as a soft, legible dark mode instead of pitch black. This is
+      // applied directly on the GPU-composited raster layer (no extra tile
+      // requests, no new provider/API key), so it's effectively free.
+      paint: {
+        "raster-brightness-min": 0.14,
+        "raster-brightness-max": 0.92,
+        "raster-contrast": -0.15,
+        "raster-saturation": -0.1,
+      },
     },
   ],
 };
@@ -66,6 +76,8 @@ interface MapViewProps {
   overlapSegments?: OverlapSegment[];
   redSpots?: RedSpot[];
   onMapClick?: (lonLat: LonLat) => void;
+  /** True while the user is placing a red spot — shows a crosshair cursor. */
+  picking?: boolean;
 }
 
 export default function MapView({
@@ -74,10 +86,33 @@ export default function MapView({
   overlapSegments = [],
   redSpots = [],
   onMapClick,
+  picking = false,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const loadedRef = useRef(false);
+  // The map is created once, but `onMapClick` is a fresh closure every
+  // render (it closes over planner state like `pickingRedSpot`). Going
+  // through a ref means the registered handler always calls the latest one
+  // instead of the first-render copy where every flag was still false.
+  const clickHandlerRef = useRef(onMapClick);
+  useEffect(() => {
+    clickHandlerRef.current = onMapClick;
+  });
+
+  // While placing a red spot the map should feel like a target, not a pan
+  // surface: crosshair cursor and no double-tap zoom stealing quick taps.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !picking) return;
+    const canvas = map.getCanvas();
+    canvas.style.cursor = "crosshair";
+    map.doubleClickZoom.disable();
+    return () => {
+      canvas.style.cursor = "";
+      map.doubleClickZoom.enable();
+    };
+  }, [picking]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -183,9 +218,7 @@ export default function MapView({
       applyData();
     });
 
-    if (onMapClick) {
-      map.on("click", (e) => onMapClick({ lon: e.lngLat.lng, lat: e.lngLat.lat }));
-    }
+    map.on("click", (e) => clickHandlerRef.current?.({ lon: e.lngLat.lng, lat: e.lngLat.lat }));
 
     return () => {
       map.remove();
