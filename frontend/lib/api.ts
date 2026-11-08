@@ -115,6 +115,13 @@ export async function createRedSpot(payload: {
   return request("/api/red-spots", { method: "POST", body: JSON.stringify(payload) });
 }
 
+export async function updateRedSpot(
+  id: string,
+  patch: Partial<{ name: string; latitude: number; longitude: number; radius_m: number }>
+): Promise<RedSpot> {
+  return request(`/api/red-spots/${id}`, { method: "PUT", body: JSON.stringify(patch) });
+}
+
 export async function deleteRedSpot(id: string): Promise<void> {
   return request(`/api/red-spots/${id}`, { method: "DELETE" });
 }

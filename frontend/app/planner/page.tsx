@@ -2,18 +2,19 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ConnXLogo from "@/components/ConnXLogo";
 import LocationField from "@/components/LocationField";
 import RedSpotPanel from "@/components/RedSpotPanel";
 import ResultsPanel from "@/components/ResultsPanel";
-import { ApiError, createRedSpot, deleteRedSpot, listRedSpots, recommendRoutes } from "@/lib/api";
+import { ApiError, recommendRoutes } from "@/lib/api";
+import { useRedSpotEditor } from "@/lib/useRedSpotEditor";
 import {
   DANGER_DISTANCE_DEFAULT_M,
   DANGER_DISTANCE_MAX_M,
   DANGER_DISTANCE_MIN_M,
 } from "@/lib/types";
-import type { GeocodeResult, LonLat, RedSpot, RedZoneBand, RouteResult, ScoredRoute, TravelMode } from "@/lib/types";
+import type { GeocodeResult, LonLat, RedZoneBand, RouteResult, ScoredRoute, TravelMode } from "@/lib/types";
 
 // maplibre-gl is a large dependency (200KB+ gzipped) that touches WebGL and
 // `window` at module scope, which is incompatible with the server. A static
@@ -66,9 +67,7 @@ export default function PlannerPage() {
   const [avoidOverlap, setAvoidOverlap] = useState(true);
   const [avoidRedSpots, setAvoidRedSpots] = useState(true);
 
-  const [redSpots, setRedSpots] = useState<RedSpot[]>([]);
-  const [pickingRedSpot, setPickingRedSpot] = useState(false);
-  const [pendingPoint, setPendingPoint] = useState<LonLat | null>(null);
+  const spots = useRedSpotEditor();
 
   const [routes, setRoutes] = useState<ScoredRoute[]>([]);
   const [comparisonRoute, setComparisonRoute] = useState<RouteResult | null>(null);
@@ -77,45 +76,6 @@ export default function PlannerPage() {
   const [status, setStatus] = useState("Enter both routes to compare");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    listRedSpots()
-      .then(setRedSpots)
-      .catch(() => {
-        /* red spots are optional to load — app still functions (spec §36) */
-      });
-  }, []);
-
-  function handleMapClick(lonLat: LonLat) {
-    if (pickingRedSpot) {
-      setPendingPoint(lonLat);
-      setPickingRedSpot(false);
-    }
-  }
-
-  async function handleAddRedSpot(payload: {
-    name: string;
-    radius_m: number;
-    latitude: number;
-    longitude: number;
-  }) {
-    try {
-      const created = await createRedSpot(payload);
-      setRedSpots((prev) => [...prev, created]);
-    } finally {
-      setPendingPoint(null);
-    }
-  }
-
-  async function handleDeleteRedSpot(id: string) {
-    setRedSpots((prev) => prev.filter((s) => s.id !== id));
-    try {
-      await deleteRedSpot(id);
-    } catch {
-      // reload from server on failure to stay in sync
-      listRedSpots().then(setRedSpots).catch(() => {});
-    }
-  }
 
   const canCompare = primaryStart.point && primaryEnd.point;
 
@@ -186,6 +146,30 @@ export default function PlannerPage() {
   }
 
   const selected = routes[selectedIndex];
+
+  // Route A's red spot results. A spot only counts as hit while it is unchanged
+  // since that comparison; edited spots are re-checked on the next compare.
+  const hitSpotIds = useMemo(() => {
+    const hits = selected?.red_spot_hits ?? [];
+    return hits
+      .filter((h) => {
+        const current = spots.redSpots.find((s) => s.id === h.red_spot.id);
+        return (
+          h.intersects &&
+          !!current &&
+          current.latitude === h.red_spot.latitude &&
+          current.longitude === h.red_spot.longitude &&
+          current.radius_m === h.red_spot.radius_m
+        );
+      })
+      .map((h) => h.red_spot.id);
+  }, [selected, spots.redSpots]);
+
+  // The saved copy of the spot being edited is replaced on the map by its draft.
+  const mapRedSpots = useMemo(
+    () => spots.redSpots.filter((s) => s.id !== spots.draft?.id),
+    [spots.redSpots, spots.draft?.id]
+  );
 
   return (
     <div className="grid h-screen grid-cols-1 md:grid-cols-[360px_1fr]">
@@ -293,13 +277,19 @@ export default function PlannerPage() {
 
         <div className="px-5 py-5">
           <RedSpotPanel
-            redSpots={redSpots}
-            onAdd={handleAddRedSpot}
-            onDelete={handleDeleteRedSpot}
-            pendingPoint={pendingPoint}
-            onCancelPending={() => setPendingPoint(null)}
-            onStartAdding={() => setPickingRedSpot(true)}
-            isPicking={pickingRedSpot}
+            redSpots={spots.redSpots}
+            hits={selected ? selected.red_spot_hits : null}
+            checking={avoidRedSpots}
+            draft={spots.draft}
+            picking={spots.picking}
+            saving={spots.saving}
+            error={spots.error}
+            onStartAdding={spots.startAdding}
+            onEdit={spots.editAndFocus}
+            onDelete={spots.remove}
+            onChangeDraft={spots.patchDraft}
+            onSave={spots.save}
+            onCancel={spots.cancel}
           />
         </div>
       </aside>
@@ -307,7 +297,7 @@ export default function PlannerPage() {
       <main className="relative bg-[#08080F]">
         <div className="pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-between sm:inset-x-5">
           <span className="rounded-full border border-border bg-panel/70 px-2.5 py-1.5 font-mono text-[11px] text-ink-dim backdrop-blur-md">
-            {pickingRedSpot ? "Tap the map to place your red spot" : status}
+            {spots.picking ? "Click the map to place your red spot" : spots.draft ? "Drag the dots to move or resize" : status}
           </span>
           <span className="rounded-full border border-border bg-panel/70 px-2.5 py-1.5 font-mono text-[11px] capitalize text-ink-dim backdrop-blur-md">
             {mode}
@@ -319,9 +309,14 @@ export default function PlannerPage() {
           comparisonRoute={comparisonRoute}
           redZoneBand={redZoneBand}
           overlapSegments={selected?.overlap.segments}
-          redSpots={redSpots}
-          onMapClick={handleMapClick}
-          picking={pickingRedSpot}
+          redSpots={mapRedSpots}
+          hitSpotIds={hitSpotIds}
+          editor={spots.draft}
+          onEditorChange={(patch) => spots.patchDraft(patch)}
+          onSpotClick={spots.edit}
+          focus={spots.focus}
+          onMapClick={spots.handleMapClick}
+          picking={spots.picking}
         />
 
         <ResultsPanel

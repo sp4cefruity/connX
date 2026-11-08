@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 TravelMode = Literal["driving", "walking", "cycling"]
 
@@ -73,6 +73,11 @@ class OverlapResult(BaseModel):
 
 # ---------- red spots ----------
 
+# Red spot radius limits (CONTEXT.md: 50 m-2 km). The frontend mirrors these.
+MIN_RADIUS_M = 50.0
+MAX_RADIUS_M = 2000.0
+
+
 class RedSpotBase(BaseModel):
     name: str
     latitude: float
@@ -84,17 +89,45 @@ class RedSpotBase(BaseModel):
 
 
 class RedSpotCreate(RedSpotBase):
-    pass
+    # Limits are enforced on input only; reading back never re-validates them.
+    name: str = Field(min_length=1, max_length=120)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    radius_m: float = Field(default=100.0, ge=MIN_RADIUS_M, le=MAX_RADIUS_M)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name must not be blank")
+        return v
 
 
 class RedSpotUpdate(BaseModel):
-    name: str | None = None
-    latitude: float | None = None
-    longitude: float | None = None
-    radius_m: float | None = None
+    name: str | None = Field(default=None, max_length=120)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    radius_m: float | None = Field(default=None, ge=MIN_RADIUS_M, le=MAX_RADIUS_M)
     type: str | None = None
     temporary: bool | None = None
     expires_at: datetime | None = None
+
+    @field_validator("name", "latitude", "longitude", "radius_m", "temporary")
+    @classmethod
+    def _not_null(cls, v):
+        # Omit a field to leave it alone; an explicit null would hit a NOT NULL column.
+        if v is None:
+            raise ValueError("must not be null")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("name must not be blank")
+        return v
 
 
 class RedSpot(RedSpotBase):
