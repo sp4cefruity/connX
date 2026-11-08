@@ -20,6 +20,7 @@ from app.schemas import (
     ScoredRoute,
 )
 from app.services import scoring
+from app.services.encounters import compute_encounters
 from app.services.overlap import compute_overlap
 from app.services.red_zone import build_red_zone_band
 from app.services.redspots import find_red_spot_hits
@@ -85,6 +86,13 @@ async def compare_routes(
         comparison_route=comparison,
         overlap=overlap,
         red_zone_band=build_red_zone_band(comparison.geometry, payload.danger_distance_m),
+        encounters=compute_encounters(
+            primary.geometry,
+            comparison.geometry,
+            payload.danger_distance_m,
+            overlap.segments,
+            settings.overlap_merge_gap_m,
+        ),
         red_spots=red_spot_hits,
     )
 
@@ -137,8 +145,16 @@ async def recommend_route(
                 min_meaningful_overlap_m=settings.min_meaningful_overlap_m,
                 merge_gap_m=settings.overlap_merge_gap_m,
             )
+            encounters = compute_encounters(
+                candidate.geometry,
+                comparison.geometry,
+                payload.danger_distance_m,
+                overlap.segments,
+                settings.overlap_merge_gap_m,
+            )
         else:
             overlap = OverlapResult(distance_km=0, percentage=0, duration_min=0, segments=[])
+            encounters = []
 
         red_spot_hits = find_red_spot_hits(candidate.geometry, spots)
 
@@ -160,6 +176,7 @@ async def recommend_route(
                 tier="alternative",  # tiers assigned below once we know rank + fastest
                 route=candidate,
                 overlap=overlap,
+                encounters=encounters,
                 red_spot_hits=red_spot_hits,
                 score=score,
                 explanation=explanation,

@@ -5,9 +5,11 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ConnXLogo from "@/components/ConnXLogo";
 import LocationField from "@/components/LocationField";
+import EncounterPanel from "@/components/EncounterPanel";
 import RedSpotPanel from "@/components/RedSpotPanel";
 import ResultsPanel from "@/components/ResultsPanel";
 import { ApiError, recommendRoutes } from "@/lib/api";
+import { encounterZoomPoints, withRefreshedEncounters, type ZoomTarget } from "@/lib/encounters";
 import { useRedSpotEditor } from "@/lib/useRedSpotEditor";
 import {
   DANGER_DISTANCE_DEFAULT_M,
@@ -73,6 +75,7 @@ export default function PlannerPage() {
   const [comparisonRoute, setComparisonRoute] = useState<RouteResult | null>(null);
   const [redZoneBand, setRedZoneBand] = useState<RedZoneBand | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [zoomTarget, setZoomTarget] = useState<ZoomTarget | null>(null);
   const [status, setStatus] = useState("Enter both routes to compare");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -118,8 +121,17 @@ export default function PlannerPage() {
       if (seq !== compareSeq.current) return;
       setRedZoneBand(result.red_zone_band);
       if (refresh) {
-        // Slider refresh: only the band changed. Leave the routes, selection
-        // and map view alone (the map re-fits whenever route objects change).
+        // Slider refresh: only the band and the encounters changed. Leave the
+        // routes, selection and map view alone (the map re-fits whenever route
+        // objects change), and just carry the new encounters over.
+        const carried = withRefreshedEncounters(routes, result.routes);
+        if (carried) {
+          setRoutes(carried);
+        } else {
+          // The candidate routes themselves changed: show the new set.
+          setRoutes(result.routes);
+          setSelectedIndex(result.recommended_index);
+        }
         return;
       }
       setRoutes(result.routes);
@@ -275,6 +287,20 @@ export default function PlannerPage() {
           )}
         </div>
 
+        {/* Only meaningful once a comparison against their route has run. */}
+        {selected && comparisonRoute && (
+          <div className="border-b border-border px-5 py-5">
+            <EncounterPanel
+              encounters={selected.encounters}
+              routeDistanceKm={selected.route.distance_km}
+              dangerDistanceM={dangerDistance}
+              onSelect={(e) =>
+                setZoomTarget({ points: encounterZoomPoints(e), key: (zoomTarget?.key ?? 0) + 1 })
+              }
+            />
+          </div>
+        )}
+
         <div className="px-5 py-5">
           <RedSpotPanel
             redSpots={spots.redSpots}
@@ -310,6 +336,8 @@ export default function PlannerPage() {
           comparisonRoute={comparisonRoute}
           redZoneBand={redZoneBand}
           overlapSegments={selected?.overlap.segments}
+          encounters={selected?.encounters}
+          zoomTo={zoomTarget}
           redSpots={mapRedSpots}
           hitSpotIds={hitSpotIds}
           editor={spots.draft}

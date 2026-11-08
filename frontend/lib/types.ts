@@ -39,6 +39,20 @@ export interface OverlapResult {
   segments: OverlapSegment[];
 }
 
+/** A stretch of Route A within the danger distance of Route B that is not Overlap. */
+export interface Encounter {
+  /** Closest point to Route B: where the marker goes. */
+  location: LonLat;
+  min_gap_m: number;
+  /** 0..1 along Route A, at `location`. */
+  position_fraction: number;
+  start_fraction: number;
+  end_fraction: number;
+  distance_m: number;
+  /** The stretch itself, used to zoom to it. */
+  geometry: LonLat[];
+}
+
 export interface RedSpot {
   id: string;
   name: string;
@@ -69,6 +83,7 @@ export interface ScoredRoute {
   tier: "recommended" | "alternative" | "fastest";
   route: RouteResult;
   overlap: OverlapResult;
+  encounters: Encounter[];
   red_spot_hits: RedSpotHit[];
   score: RouteScoreBreakdown;
   explanation: string[];
@@ -92,5 +107,6 @@ export interface CompareResponse {
   comparison_route: RouteResult;
   overlap: OverlapResult;
   red_zone_band: RedZoneBand | null;
+  encounters: Encounter[];
   red_spots: RedSpotHit[];
 }

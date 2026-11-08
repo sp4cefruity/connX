@@ -11,7 +11,8 @@ import {
   type EditorPatch,
 } from "@/lib/redSpotMap";
 import { circleRing } from "@/lib/redSpots";
-import type { LonLat, OverlapSegment, RedSpot, RedZoneBand, RouteResult } from "@/lib/types";
+import { formatGap, type ZoomTarget } from "@/lib/encounters";
+import type { Encounter, LonLat, OverlapSegment, RedSpot, RedZoneBand, RouteResult } from "@/lib/types";
 
 // OpenFreeMap vector basemap (no API key). Configurable so the provider or
 // style can be swapped without a code change (see ADR 0004).
@@ -28,15 +29,20 @@ const PALETTE = {
   routeA: "#5EE6C4",
   routeB: "#B98CFF",
   ember: "#FF5A36",
+  // Encounters: close passes that are not overlap. Amber, apart from ember (overlap, red zone).
+  encounter: "#F5C24B",
 };
 
 const EMPTY_FC = { type: "FeatureCollection" as const, features: [] };
+// A stable default, so an omitted prop doesn't look like new data on every render.
+const EMPTY_ENCOUNTERS: Encounter[] = [];
 const SOURCE_IDS = [
   "primary-route",
   "comparison-route",
   "overlap-segments",
   "red-spots",
   "red-zone-band",
+  "encounter-markers",
   ...EDITOR_SOURCE_IDS,
 ];
 
@@ -138,6 +144,38 @@ function addCustomLayers(map: maplibregl.Map) {
       "line-width": 7,
       "line-opacity": 0.92,
       "line-blur": 1,
+    },
+  });
+  // Encounter markers: one dot at the closest point of each close pass, labelled
+  // with the gap. Above the routes so a marker is never buried by its own line.
+  add({
+    id: "encounter-marker",
+    type: "circle",
+    source: "encounter-markers",
+    paint: {
+      "circle-radius": 7,
+      "circle-color": PALETTE.encounter,
+      "circle-stroke-color": PALETTE.bg,
+      "circle-stroke-width": 2.5,
+    },
+  });
+  add({
+    id: "encounter-label",
+    type: "symbol",
+    source: "encounter-markers",
+    layout: {
+      "text-field": ["get", "label"],
+      // Served by the default OpenFreeMap glyphs; a custom NEXT_PUBLIC_MAP_STYLE_URL must offer it too.
+      "text-font": ["Noto Sans Bold"],
+      "text-size": 12,
+      "text-offset": [0, -1.4],
+      "text-anchor": "bottom",
+      "text-allow-overlap": true,
+    },
+    paint: {
+      "text-color": PALETTE.encounter,
+      "text-halo-color": PALETTE.bg,
+      "text-halo-width": 2,
     },
   });
   add({
@@ -287,10 +325,25 @@ function toCircle(spot: RedSpot, hit: boolean) {
   };
 }
 
+function toEncounterMarkers(encounters: Encounter[]) {
+  return {
+    type: "FeatureCollection" as const,
+    features: encounters.map((e, i) => ({
+      type: "Feature" as const,
+      properties: { index: i, label: formatGap(e.min_gap_m) },
+      geometry: { type: "Point" as const, coordinates: [e.location.lon, e.location.lat] },
+    })),
+  };
+}
+
 interface MapViewProps {
   primaryRoute?: RouteResult | null;
   comparisonRoute?: RouteResult | null;
   overlapSegments?: OverlapSegment[];
+  /** Close passes of the selected route; drawn as markers labelled with the gap. */
+  encounters?: Encounter[];
+  /** Fit the view to these points whenever its `key` changes (e.g. a clicked encounter). */
+  zoomTo?: ZoomTarget | null;
   /** Route B buffered by the danger distance (from the API). */
   redZoneBand?: RedZoneBand | null;
   redSpots?: RedSpot[];
@@ -313,6 +366,8 @@ export default function MapView({
   primaryRoute,
   comparisonRoute,
   overlapSegments = [],
+  encounters = EMPTY_ENCOUNTERS,
+  zoomTo = null,
   redZoneBand = null,
   redSpots = [],
   hitSpotIds,
@@ -333,13 +388,13 @@ export default function MapView({
   const clickHandlerRef = useRef(onMapClick);
   // Same idea for the data: `style.load` handlers (registered once) must push
   // the latest data when layers are re-added, not the first render's.
-  const dataRef = useRef({ primaryRoute, comparisonRoute, overlapSegments, redZoneBand });
+  const dataRef = useRef({ primaryRoute, comparisonRoute, overlapSegments, redZoneBand, encounters });
   // Red spot drawing state, read by handlers that are registered once.
   const spotStateRef = useRef({ redSpots, hitSpotIds, editor, picking, onEditorChange, onSpotClick });
   const interactionsRef = useRef(false);
   useEffect(() => {
     clickHandlerRef.current = onMapClick;
-    dataRef.current = { primaryRoute, comparisonRoute, overlapSegments, redZoneBand };
+    dataRef.current = { primaryRoute, comparisonRoute, overlapSegments, redZoneBand, encounters };
     spotStateRef.current = { redSpots, hitSpotIds, editor, picking, onEditorChange, onSpotClick };
   });
 
@@ -402,7 +457,7 @@ export default function MapView({
   // Writes the latest data into the custom sources; optionally fits the view
   // to the routes (only when the data changed, not on a style reload).
   function pushData(map: maplibregl.Map, fit: boolean) {
-    const { primaryRoute, comparisonRoute, overlapSegments, redZoneBand } = dataRef.current;
+    const { primaryRoute, comparisonRoute, overlapSegments, redZoneBand, encounters } = dataRef.current;
 
     const primarySrc = map.getSource("primary-route") as maplibregl.GeoJSONSource | undefined;
     const comparisonSrc = map.getSource("comparison-route") as maplibregl.GeoJSONSource | undefined;
@@ -420,6 +475,9 @@ export default function MapView({
       type: "FeatureCollection",
       features: overlapSegments.map((s) => toLineString(s.geometry)),
     });
+    (map.getSource("encounter-markers") as maplibregl.GeoJSONSource | undefined)?.setData(
+      toEncounterMarkers(encounters)
+    );
     (map.getSource("red-zone-band") as maplibregl.GeoJSONSource | undefined)?.setData({
       type: "FeatureCollection",
       features: redZoneBand ? [{ type: "Feature", properties: {}, geometry: redZoneBand }] : [],
@@ -444,14 +502,14 @@ export default function MapView({
     }
   }
 
-  // The band changes on its own when the danger distance moves; don't re-fit
-  // the view for that.
+  // The band and the encounters change on their own when the danger distance
+  // moves (or another route is selected); don't re-fit the view for that.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
     pushData(map, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [redZoneBand]);
+  }, [redZoneBand, encounters]);
 
   // Red spots and the drawing editor update separately from the routes so that
   // editing a spot never re-fits the view to the routes.
@@ -491,6 +549,23 @@ export default function MapView({
     map.easeTo({ center: [focus.lon, focus.lat], zoom: Math.max(map.getZoom(), 14), duration: 600 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.key]);
+
+  // Zoom to a clicked encounter. The bottom padding clears the results panel
+  // that overlays the lower part of the map.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !zoomTo || zoomTo.points.length === 0) return;
+    const lons = zoomTo.points.map((p) => p.lon);
+    const lats = zoomTo.points.map((p) => p.lat);
+    map.fitBounds(
+      [
+        [Math.min(...lons), Math.min(...lats)],
+        [Math.max(...lons), Math.max(...lats)],
+      ],
+      { padding: { top: 90, left: 90, right: 90, bottom: 260 }, maxZoom: 17, duration: 700 }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoomTo?.key]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

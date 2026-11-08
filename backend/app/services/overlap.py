@@ -21,28 +21,11 @@ This module is pure Python/Shapely — no DB or network — so it's unit
 tested directly (see tests/test_overlap.py).
 """
 from shapely.geometry import LineString
-from shapely.ops import linemerge, substring, unary_union
+from shapely.ops import substring
 
 from app.schemas import LonLat, OverlapResult, OverlapSegment
+from app.services.linework import as_linestrings, merge_ranges, ranges_along
 from app.services.projection import Projection, mean_lat
-
-
-def _as_linestrings(geom) -> list[LineString]:
-    """Flatten a Shapely intersection result (which may be a LineString,
-    MultiLineString, GeometryCollection, or empty) into a list of LineStrings."""
-    if geom.is_empty:
-        return []
-    if geom.geom_type == "LineString":
-        return [geom]
-    if geom.geom_type == "MultiLineString":
-        return list(geom.geoms)
-    if geom.geom_type == "GeometryCollection":
-        out = []
-        for g in geom.geoms:
-            out.extend(_as_linestrings(g))
-        return out
-    # Points / tiny polygons from near-tangent buffers: ignore.
-    return []
 
 
 def _merge_close_segments(segments: list[LineString], route_a: LineString, gap_m: float) -> list[LineString]:
@@ -52,24 +35,7 @@ def _merge_close_segments(segments: list[LineString], route_a: LineString, gap_m
     if not segments:
         return []
 
-    # Compute each segment's start/end distance-along-route_a so ranges
-    # can be sorted and merged along a single 1D axis.
-    ranges = []
-    for seg in segments:
-        p_start = seg.interpolate(0)
-        p_end = seg.interpolate(1, normalized=True)
-        d_start = route_a.project(p_start)
-        d_end = route_a.project(p_end)
-        lo, hi = min(d_start, d_end), max(d_start, d_end)
-        ranges.append([lo, hi])
-
-    ranges.sort(key=lambda r: r[0])
-    merged: list[list[float]] = []
-    for lo, hi in ranges:
-        if merged and lo - merged[-1][1] <= gap_m:
-            merged[-1][1] = max(merged[-1][1], hi)
-        else:
-            merged.append([lo, hi])
+    merged = merge_ranges(ranges_along(segments, route_a), gap_m)
 
     total_len = route_a.length
     out = []
@@ -101,7 +67,7 @@ def compute_overlap(
 
     corridor = b_line.buffer(tolerance_m)
     raw_intersection = a_line.intersection(corridor)
-    raw_segments = _as_linestrings(raw_intersection)
+    raw_segments = as_linestrings(raw_intersection)
 
     # Drop slivers (incidental crossings, spec §31 "Intersections").
     substantial = [s for s in raw_segments if s.length >= min_meaningful_overlap_m]

@@ -71,6 +71,19 @@ class OverlapResult(BaseModel):
     segments: list[OverlapSegment]
 
 
+# ---------- encounters ----------
+
+class Encounter(BaseModel):
+    """A stretch of route A within the danger distance of route B that is not Overlap."""
+    location: LonLat  # closest point to route B: where the marker goes
+    min_gap_m: float
+    position_fraction: float  # 0..1 along route A, at `location`
+    start_fraction: float
+    end_fraction: float
+    distance_m: float  # length of the stretch
+    geometry: list[LonLat]  # the stretch itself, for zooming
+
+
 # ---------- red spots ----------
 
 # Red spot radius limits (CONTEXT.md: 50 m-2 km). The frontend mirrors these.
@@ -167,6 +180,7 @@ class CompareResponse(BaseModel):
     comparison_route: RouteResult
     overlap: OverlapResult
     red_zone_band: GeoJsonPolygon | None = None
+    encounters: list[Encounter] = []
     red_spots: list[RedSpotHit]
 
 
@@ -182,6 +196,7 @@ class ScoredRoute(BaseModel):
     tier: Literal["recommended", "alternative", "fastest"]
     route: RouteResult
     overlap: OverlapResult
+    encounters: list[Encounter] = []
     red_spot_hits: list[RedSpotHit]
     score: RouteScoreBreakdown
     explanation: list[str]
