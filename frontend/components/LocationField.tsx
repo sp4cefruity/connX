@@ -2,11 +2,18 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { geocode } from "@/lib/api";
+import { geocode, isSearchSlowError } from "@/lib/api";
 import type { GeocodeResult, LonLat } from "@/lib/types";
+
+// Type-ahead debounce. Photon is fast enough that a short wait feels instant.
+const DEBOUNCE_MS = 150;
+// Give up on a search after this long and show the quiet "slow" state.
+const SLOW_AFTER_MS = 8000;
 
 interface LocationFieldProps {
   label: string;
+  /** Current map centre; sent to the backend to bias results toward the viewport. */
+  bias?: LonLat | null;
   placeholder?: string;
   value: string;
   onChange: (label: string) => void;
@@ -23,6 +30,7 @@ interface DropdownRect {
 
 export default function LocationField({
   label,
+  bias,
   placeholder,
   value,
   onChange,
@@ -34,6 +42,7 @@ export default function LocationField({
   const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
   const [loading, setLoading] = useState(false);
+  const [slow, setSlow] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
   const [rect, setRect] = useState<DropdownRect | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -48,6 +57,9 @@ export default function LocationField({
   // re-triggers the query and pops the dropdown right back open (the
   // "have to click twice" bug).
   const lastPickedRef = useRef<string | null>(null);
+  // The bias is read at request time; changing it must not re-run the search.
+  const biasRef = useRef<LonLat | null | undefined>(bias);
+  biasRef.current = bias;
   const listId = useId();
 
   // Portals can only render on the client, once we have a document.
@@ -65,28 +77,42 @@ export default function LocationField({
       setResults([]);
       setOpen(false);
       setActiveIdx(-1);
+      setSlow(false);
+      setLoading(false);
       return;
     }
 
     clearTimeout(debounceRef.current);
-    abortRef.current?.abort();
+    abortRef.current?.abort(); // stale request: the user kept typing
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
+      let timedOut = false;
+      const slowTimer = setTimeout(() => {
+        timedOut = true;
+        ctrl.abort();
+      }, SLOW_AFTER_MS);
       try {
-        const r = await geocode(value, { signal: ctrl.signal });
+        const r = await geocode(value, { signal: ctrl.signal, bias: biasRef.current });
         if (ctrl.signal.aborted) return;
+        setSlow(false);
         setResults(r);
         setActiveIdx(-1);
         setOpen(r.length > 0);
-      } catch {
-        if (!ctrl.signal.aborted) setResults([]);
+      } catch (err) {
+        if (timedOut || (!ctrl.signal.aborted && isSearchSlowError(err))) {
+          // Quiet state, not an error: keep whatever the user was looking at.
+          setSlow(true);
+        } else if (!ctrl.signal.aborted) {
+          setResults([]);
+        }
       } finally {
-        if (!ctrl.signal.aborted) setLoading(false);
+        clearTimeout(slowTimer);
+        if (!ctrl.signal.aborted || timedOut) setLoading(false);
       }
-    }, 250);
+    }, DEBOUNCE_MS);
     return () => clearTimeout(debounceRef.current);
   }, [value]);
 
@@ -95,6 +121,8 @@ export default function LocationField({
     abortRef.current?.abort(); // an in-flight response must not reopen the list
     lastPickedRef.current = r.label;
     onSelect(r);
+    setLoading(false);
+    setSlow(false);
     setOpen(false);
     setResults([]);
     setActiveIdx(-1);
@@ -230,6 +258,12 @@ export default function LocationField({
           </svg>
         )}
       </div>
+
+      {slow && !loading && (
+        <p role="status" className="mt-1.5 font-mono text-[10.5px] text-ink-dim">
+          Search is slow right now. Keep typing or try again in a moment.
+        </p>
+      )}
 
       {showUseLocation && (
         <button

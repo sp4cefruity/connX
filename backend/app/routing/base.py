@@ -26,7 +26,13 @@ class RoutingProvider(ABC):
         ...
 
     @abstractmethod
-    async def geocode(self, query: str, limit: int = 5) -> list[GeocodeResult]:
+    async def geocode(
+        self,
+        query: str,
+        limit: int = 5,
+        lat: float | None = None,
+        lon: float | None = None,
+    ) -> list[GeocodeResult]:
         ...
 
     @abstractmethod

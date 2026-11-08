@@ -42,6 +42,18 @@ export default function PlannerPage() {
   const [compareStart, setCompareStart] = useState<Endpoint>({ label: "", point: null });
   const [compareEnd, setCompareEnd] = useState<Endpoint>({ label: "", point: null });
 
+  // Search bias for LocationField. MapView doesn't report its centre yet, so this
+  // starts at MapView's initial centre and follows the last picked location (the
+  // map flies there). TODO: once MapView exposes `onMoveEnd?: (center: LonLat) => void`,
+  // feed it into setMapCenter so the bias tracks manual panning too.
+  const [mapCenter, setMapCenter] = useState<LonLat>({ lon: 85.8245, lat: 20.2961 });
+
+  function selectResult(set: (e: Endpoint) => void, r: GeocodeResult) {
+    const point = { lon: r.lon, lat: r.lat };
+    set({ label: r.label, point });
+    setMapCenter(point);
+  }
+
   const [mode] = useState<TravelMode>("driving");
   const [sensitivity] = useState<Sensitivity>("medium");
   const [avoidOverlap, setAvoidOverlap] = useState(true);
@@ -160,19 +172,24 @@ export default function PlannerPage() {
           </div>
           <LocationField
             label="Start"
+            bias={mapCenter}
             placeholder="Current location"
             value={primaryStart.label}
             onChange={(label) => setPrimaryStart((p) => ({ ...p, label }))}
-            onSelect={(r: GeocodeResult) => setPrimaryStart({ label: r.label, point: { lon: r.lon, lat: r.lat } })}
+            onSelect={(r: GeocodeResult) => selectResult(setPrimaryStart, r)}
             showUseLocation
-            onUseLocation={(loc) => setPrimaryStart({ label: "Current location", point: loc })}
+            onUseLocation={(loc) => {
+              setPrimaryStart({ label: "Current location", point: loc });
+              setMapCenter(loc);
+            }}
           />
           <LocationField
             label="Destination"
+            bias={mapCenter}
             placeholder="Where to?"
             value={primaryEnd.label}
             onChange={(label) => setPrimaryEnd((p) => ({ ...p, label }))}
-            onSelect={(r: GeocodeResult) => setPrimaryEnd({ label: r.label, point: { lon: r.lon, lat: r.lat } })}
+            onSelect={(r: GeocodeResult) => selectResult(setPrimaryEnd, r)}
           />
         </div>
 
@@ -183,17 +200,19 @@ export default function PlannerPage() {
           </div>
           <LocationField
             label="Start"
+            bias={mapCenter}
             placeholder="Search location"
             value={compareStart.label}
             onChange={(label) => setCompareStart((p) => ({ ...p, label }))}
-            onSelect={(r: GeocodeResult) => setCompareStart({ label: r.label, point: { lon: r.lon, lat: r.lat } })}
+            onSelect={(r: GeocodeResult) => selectResult(setCompareStart, r)}
           />
           <LocationField
             label="Destination"
+            bias={mapCenter}
             placeholder="Search location"
             value={compareEnd.label}
             onChange={(label) => setCompareEnd((p) => ({ ...p, label }))}
-            onSelect={(r: GeocodeResult) => setCompareEnd({ label: r.label, point: { lon: r.lon, lat: r.lat } })}
+            onSelect={(r: GeocodeResult) => selectResult(setCompareEnd, r)}
           />
 
           <div className="mt-3 flex flex-col gap-2 font-mono text-[11px] text-ink-dim">

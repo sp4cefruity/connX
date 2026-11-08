@@ -5,6 +5,7 @@ from app.routing.base import RoutingProvider
 from app.routing.mock import MockGeocoding, MockRouting
 from app.routing.nominatim import NominatimGeocoding
 from app.routing.osrm import OSRMRouting
+from app.routing.photon import FallbackGeocoding, PhotonGeocoding
 from app.schemas import GeocodeResult, LonLat, RouteResult, TravelMode
 
 
@@ -23,8 +24,10 @@ class CompositeProvider(RoutingProvider):
     ) -> list[RouteResult]:
         return await self._routing.get_alternative_routes(start, end, mode, count)
 
-    async def geocode(self, query: str, limit: int = 5) -> list[GeocodeResult]:
-        return await self._geocoding.geocode(query, limit)
+    async def geocode(
+        self, query: str, limit: int = 5, lat: float | None = None, lon: float | None = None
+    ) -> list[GeocodeResult]:
+        return await self._geocoding.geocode(query, limit, lat=lat, lon=lon)
 
     async def reverse_geocode(self, lon: float, lat: float) -> GeocodeResult | None:
         return await self._geocoding.reverse_geocode(lon, lat)
@@ -49,5 +52,10 @@ def get_routing_provider() -> RoutingProvider:
         geocoding = MockGeocoding()
     else:
         geocoding = NominatimGeocoding(settings.nominatim_base_url, settings.nominatim_user_agent)
+        if settings.geocoding_provider == "photon":
+            # Photon for forward search, Nominatim fallback + reverse (ADR 0003).
+            geocoding = FallbackGeocoding(
+                PhotonGeocoding(settings.photon_base_url, settings.photon_timeout_s), geocoding
+            )
 
     return CompositeProvider(routing, geocoding)
