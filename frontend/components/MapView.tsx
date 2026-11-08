@@ -3,6 +3,14 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
+import {
+  EDITOR_SOURCE_IDS,
+  attachRedSpotInteractions,
+  editorFeatureCollections,
+  type EditorGeometry,
+  type EditorPatch,
+} from "@/lib/redSpotMap";
+import { circleRing } from "@/lib/redSpots";
 import type { LonLat, OverlapSegment, RedSpot, RouteResult } from "@/lib/types";
 
 // OpenFreeMap vector basemap (no API key). Configurable so the provider or
@@ -23,7 +31,7 @@ const PALETTE = {
 };
 
 const EMPTY_FC = { type: "FeatureCollection" as const, features: [] };
-const SOURCE_IDS = ["primary-route", "comparison-route", "overlap-segments", "red-spots"];
+const SOURCE_IDS = ["primary-route", "comparison-route", "overlap-segments", "red-spots", ...EDITOR_SOURCE_IDS];
 
 /**
  * Where custom layers go: just below the basemap's label layers, but still
@@ -121,7 +129,8 @@ function addCustomLayers(map: maplibregl.Map) {
     id: "red-spot-fill",
     type: "fill",
     source: "red-spots",
-    paint: { "fill-color": PALETTE.ember, "fill-opacity": 0.1 },
+    // Spots that Route A hits are filled more strongly.
+    paint: { "fill-color": PALETTE.ember, "fill-opacity": ["case", ["boolean", ["get", "hit"], false], 0.28, 0.1] },
   });
   add({
     id: "red-spot-outline",
@@ -132,6 +141,38 @@ function addCustomLayers(map: maplibregl.Map) {
       "line-width": 1.5,
       "line-dasharray": [3, 2],
       "line-opacity": 0.55,
+    },
+  });
+  // Red spot hit: solid, heavier outline on top of the dashed one.
+  add({
+    id: "red-spot-hit-outline",
+    type: "line",
+    source: "red-spots",
+    filter: ["==", ["get", "hit"], true],
+    paint: { "line-color": PALETTE.ember, "line-width": 3, "line-opacity": 0.95 },
+  });
+  // The spot being drawn / edited, and its drag handles (centre = move, edge = resize).
+  add({
+    id: "red-spot-draft-fill",
+    type: "fill",
+    source: "red-spot-draft",
+    paint: { "fill-color": PALETTE.ember, "fill-opacity": 0.2 },
+  });
+  add({
+    id: "red-spot-draft-outline",
+    type: "line",
+    source: "red-spot-draft",
+    paint: { "line-color": PALETTE.ember, "line-width": 2.5, "line-opacity": 0.95 },
+  });
+  add({
+    id: "red-spot-handles",
+    type: "circle",
+    source: "red-spot-handles",
+    paint: {
+      "circle-radius": 9,
+      "circle-color": ["match", ["get", "kind"], "radius", PALETTE.ink, PALETTE.ember],
+      "circle-stroke-color": ["match", ["get", "kind"], "radius", PALETTE.ember, PALETTE.ink],
+      "circle-stroke-width": 3,
     },
   });
 }
@@ -220,20 +261,14 @@ function toLineString(points: LonLat[]) {
   };
 }
 
-function toCircle(spot: RedSpot, steps = 48) {
-  const coords: [number, number][] = [];
-  const metersPerDegLat = 111_320;
-  const cosLat = Math.cos((spot.latitude * Math.PI) / 180);
-  for (let i = 0; i <= steps; i++) {
-    const angle = (i / steps) * 2 * Math.PI;
-    const dx = (spot.radius_m * Math.cos(angle)) / (metersPerDegLat * cosLat);
-    const dy = (spot.radius_m * Math.sin(angle)) / metersPerDegLat;
-    coords.push([spot.longitude + dx, spot.latitude + dy]);
-  }
+function toCircle(spot: RedSpot, hit: boolean) {
   return {
     type: "Feature" as const,
-    properties: { name: spot.name },
-    geometry: { type: "Polygon" as const, coordinates: [coords] },
+    properties: { id: spot.id, name: spot.name, hit },
+    geometry: {
+      type: "Polygon" as const,
+      coordinates: [circleRing({ lon: spot.longitude, lat: spot.latitude }, spot.radius_m, 48)],
+    },
   };
 }
 
@@ -242,6 +277,16 @@ interface MapViewProps {
   comparisonRoute?: RouteResult | null;
   overlapSegments?: OverlapSegment[];
   redSpots?: RedSpot[];
+  /** Ids of saved red spots that Route A hits (drawn highlighted). */
+  hitSpotIds?: string[];
+  /** Geometry of the red spot being drawn / edited; shows its circle and drag handles. */
+  editor?: EditorGeometry | null;
+  /** Called while a handle is dragged. The caller owns the value and clamps the radius. */
+  onEditorChange?: (patch: EditorPatch) => void;
+  /** A saved red spot was clicked on the map. */
+  onSpotClick?: (id: string) => void;
+  /** Pan to this point whenever `key` changes. */
+  focus?: { lon: number; lat: number; key: number } | null;
   onMapClick?: (lonLat: LonLat) => void;
   /** True while the user is placing a red spot — shows a crosshair cursor. */
   picking?: boolean;
@@ -252,6 +297,11 @@ export default function MapView({
   comparisonRoute,
   overlapSegments = [],
   redSpots = [],
+  hitSpotIds,
+  editor = null,
+  onEditorChange,
+  onSpotClick,
+  focus = null,
   onMapClick,
   picking = false,
 }: MapViewProps) {
@@ -265,10 +315,14 @@ export default function MapView({
   const clickHandlerRef = useRef(onMapClick);
   // Same idea for the data: `style.load` handlers (registered once) must push
   // the latest data when layers are re-added, not the first render's.
-  const dataRef = useRef({ primaryRoute, comparisonRoute, overlapSegments, redSpots });
+  const dataRef = useRef({ primaryRoute, comparisonRoute, overlapSegments });
+  // Red spot drawing state, read by handlers that are registered once.
+  const spotStateRef = useRef({ redSpots, hitSpotIds, editor, picking, onEditorChange, onSpotClick });
+  const interactionsRef = useRef(false);
   useEffect(() => {
     clickHandlerRef.current = onMapClick;
-    dataRef.current = { primaryRoute, comparisonRoute, overlapSegments, redSpots };
+    dataRef.current = { primaryRoute, comparisonRoute, overlapSegments };
+    spotStateRef.current = { redSpots, hitSpotIds, editor, picking, onEditorChange, onSpotClick };
   });
 
   // While placing a red spot the map should feel like a target, not a pan
@@ -305,6 +359,16 @@ export default function MapView({
       tuneDarkStyle(map);
       addCustomLayers(map);
       pushData(map, false);
+      pushSpotData(map);
+      if (!interactionsRef.current) {
+        interactionsRef.current = true;
+        attachRedSpotInteractions(map, {
+          getEditor: () => spotStateRef.current.editor,
+          onEditorChange: (patch) => spotStateRef.current.onEditorChange?.(patch),
+          isPicking: () => spotStateRef.current.picking,
+          onSpotClick: (id) => spotStateRef.current.onSpotClick?.(id),
+        });
+      }
     });
 
     map.on("click", (e) => clickHandlerRef.current?.({ lon: e.lngLat.lng, lat: e.lngLat.lat }));
@@ -320,12 +384,11 @@ export default function MapView({
   // Writes the latest data into the custom sources; optionally fits the view
   // to the routes (only when the data changed, not on a style reload).
   function pushData(map: maplibregl.Map, fit: boolean) {
-    const { primaryRoute, comparisonRoute, overlapSegments, redSpots } = dataRef.current;
+    const { primaryRoute, comparisonRoute, overlapSegments } = dataRef.current;
 
     const primarySrc = map.getSource("primary-route") as maplibregl.GeoJSONSource | undefined;
     const comparisonSrc = map.getSource("comparison-route") as maplibregl.GeoJSONSource | undefined;
     const overlapSrc = map.getSource("overlap-segments") as maplibregl.GeoJSONSource | undefined;
-    const redSpotSrc = map.getSource("red-spots") as maplibregl.GeoJSONSource | undefined;
 
     primarySrc?.setData({
       type: "FeatureCollection",
@@ -338,10 +401,6 @@ export default function MapView({
     overlapSrc?.setData({
       type: "FeatureCollection",
       features: overlapSegments.map((s) => toLineString(s.geometry)),
-    });
-    redSpotSrc?.setData({
-      type: "FeatureCollection",
-      features: redSpots.map((s) => toCircle(s)),
     });
 
     if (!fit) return;
@@ -363,12 +422,44 @@ export default function MapView({
     }
   }
 
+  // Red spots and the drawing editor update separately from the routes so that
+  // editing a spot never re-fits the view to the routes.
+  function pushSpotData(map: maplibregl.Map) {
+    const { redSpots, hitSpotIds, editor } = spotStateRef.current;
+    const hits = new Set(hitSpotIds ?? []);
+    const saved = map.getSource("red-spots") as maplibregl.GeoJSONSource | undefined;
+    const draft = map.getSource("red-spot-draft") as maplibregl.GeoJSONSource | undefined;
+    const handles = map.getSource("red-spot-handles") as maplibregl.GeoJSONSource | undefined;
+
+    saved?.setData({
+      type: "FeatureCollection",
+      features: redSpots.map((s) => toCircle(s, hits.has(s.id))),
+    });
+    const editorData = editorFeatureCollections(editor);
+    draft?.setData(editorData.draft);
+    handles?.setData(editorData.handles);
+  }
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loadedRef.current) return;
     pushData(map, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [primaryRoute, comparisonRoute, overlapSegments, redSpots]);
+  }, [primaryRoute, comparisonRoute, overlapSegments]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    pushSpotData(map);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [redSpots, hitSpotIds, editor]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !focus) return;
+    map.easeTo({ center: [focus.lon, focus.lat], zoom: Math.max(map.getZoom(), 14), duration: 600 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.key]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
