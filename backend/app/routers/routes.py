@@ -167,9 +167,18 @@ async def recommend_route(
                 avoid_red_spots=payload.avoid_red_spots,
                 fastest_duration_min=fastest_duration,
                 shortest_distance_km=shortest_distance,
+                encounters=encounters,
+                danger_distance_m=payload.danger_distance_m,
             )
         )
-        explanation = scoring.explain(candidate, overlap, red_spot_hits, fastest_route)
+        explanation = scoring.explain(
+            candidate,
+            overlap,
+            red_spot_hits,
+            fastest_route,
+            encounters if comparison else None,
+            payload.danger_distance_m,
+        )
 
         scored.append(
             ScoredRoute(
