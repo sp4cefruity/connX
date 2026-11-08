@@ -295,11 +295,12 @@ export default function PlannerPage() {
       </aside>
 
       <main className="relative bg-[#08080F]">
-        <div className="pointer-events-none absolute inset-x-4 top-4 z-10 flex justify-between sm:inset-x-5">
-          <span className="rounded-full border border-border bg-panel/70 px-2.5 py-1.5 font-mono text-[11px] text-ink-dim backdrop-blur-md">
+        {/* Left-aligned and capped in width so it never runs under the zoom buttons (top-right). */}
+        <div className="pointer-events-none absolute left-4 right-16 top-4 z-10 flex items-center gap-2 sm:left-5">
+          <span className="truncate rounded-full border border-border bg-panel/70 px-2.5 py-1.5 font-mono text-[11px] text-ink-dim backdrop-blur-md">
             {spots.picking ? "Click the map to place your red spot" : spots.draft ? "Drag the dots to move or resize" : status}
           </span>
-          <span className="rounded-full border border-border bg-panel/70 px-2.5 py-1.5 font-mono text-[11px] capitalize text-ink-dim backdrop-blur-md">
+          <span className="shrink-0 rounded-full border border-border bg-panel/70 px-2.5 py-1.5 font-mono text-[11px] capitalize text-ink-dim backdrop-blur-md">
             {mode}
           </span>
         </div>

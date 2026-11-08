@@ -55,7 +55,12 @@ def get_routing_provider() -> RoutingProvider:
         if settings.geocoding_provider == "photon":
             # Photon for forward search, Nominatim fallback + reverse (ADR 0003).
             geocoding = FallbackGeocoding(
-                PhotonGeocoding(settings.photon_base_url, settings.photon_timeout_s), geocoding
+                PhotonGeocoding(
+                    settings.photon_base_url,
+                    settings.photon_timeout_s,
+                    settings.nominatim_user_agent,
+                ),
+                geocoding,
             )
 
     return CompositeProvider(routing, geocoding)

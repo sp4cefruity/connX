@@ -131,6 +131,120 @@ def test_photon_omits_bias_when_absent(monkeypatch):
     assert "lat" not in seen and "lon" not in seen
 
 
+def _feature(name, lon, lat, city="X"):
+    return {
+        "type": "Feature",
+        "properties": {"name": name, "city": city},
+        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+    }
+
+
+def _fc(*features):
+    return {"type": "FeatureCollection", "features": list(features)}
+
+
+_LOCAL = _feature("Esplanade", 85.856, 20.291, "Bhubaneswar")
+_LOCAL2 = _feature("Esplanade Road", 85.85, 20.29, "Bhubaneswar")
+_LOCAL3 = _feature("Esplanade Lane", 85.84, 20.28, "Bhubaneswar")
+_FAR = _feature("One Esplanade", 120.98, 14.54, "Pasay")
+
+
+def test_photon_searches_region_and_worldwide_with_bias(monkeypatch):
+    calls = []
+
+    def handler(request: httpx.Request):
+        p = dict(request.url.params)
+        calls.append(p)
+        return httpx.Response(200, json=_fc(_LOCAL) if "bbox" in p else _fc(_FAR))
+
+    res = run(_photon_with_transport(monkeypatch, handler).geocode("esplanade", lat=20.26, lon=85.777))
+
+    local_calls = [c for c in calls if "bbox" in c]
+    world_calls = [c for c in calls if "bbox" not in c]
+    assert len(local_calls) == 1 and len(world_calls) == 1
+    min_lon, min_lat, max_lon, max_lat = map(float, local_calls[0]["bbox"].split(","))
+    assert min_lon < 85.777 < max_lon and min_lat < 20.26 < max_lat
+    # Regional hits come first, worldwide fills the rest.
+    assert [r.label for r in res] == ["Esplanade", "One Esplanade"]
+
+
+def test_photon_sends_app_user_agent(monkeypatch):
+    """photon.komoot.io answers 403 to the default python-httpx User-Agent."""
+    seen = {}
+
+    def handler(request: httpx.Request):
+        seen["ua"] = request.headers.get("user-agent")
+        return httpx.Response(200, json=_fc(_LOCAL))
+
+    photon = _photon_with_transport(monkeypatch, handler)
+    photon.user_agent = "ConnX/0.1 (test)"
+    run(photon.geocode("esplanade"))
+    assert seen["ua"] == "ConnX/0.1 (test)"
+    assert "httpx" not in seen["ua"]
+
+
+def test_photon_no_bbox_without_bias(monkeypatch):
+    calls = []
+
+    def handler(request: httpx.Request):
+        calls.append(dict(request.url.params))
+        return httpx.Response(200, json=_fc(_FAR))
+
+    run(_photon_with_transport(monkeypatch, handler).geocode("esplanade"))
+    assert len(calls) == 1 and "bbox" not in calls[0]
+
+
+def test_photon_drops_trailing_words_in_region_when_nothing_matches(monkeypatch):
+    """OSM often names a place just 'Esplanade'; 'esplanade one mall' matches nothing locally."""
+    local_queries = []
+
+    def handler(request: httpx.Request):
+        p = dict(request.url.params)
+        if "bbox" not in p:
+            return httpx.Response(200, json=_fc(_FAR))
+        local_queries.append(p["q"])
+        # Only the single-word query matches in the region.
+        return httpx.Response(200, json=_fc(_LOCAL, _LOCAL2, _LOCAL3) if p["q"] == "esplanade" else _fc())
+
+    res = run(_photon_with_transport(monkeypatch, handler).geocode("esplanade one mall", lat=20.26, lon=85.777))
+
+    assert local_queries == ["esplanade one mall", "esplanade one", "esplanade"]
+    # Trimmed regional hits are capped at 2 so worldwide matches still show.
+    assert [r.label for r in res] == ["Esplanade", "Esplanade Road", "One Esplanade"]
+
+
+def test_photon_exact_regional_matches_are_not_capped(monkeypatch):
+    def handler(request: httpx.Request):
+        return httpx.Response(200, json=_fc(_LOCAL, _LOCAL2, _LOCAL3) if "bbox" in request.url.params else _fc(_FAR))
+
+    res = run(_photon_with_transport(monkeypatch, handler).geocode("esplanade", lat=20.26, lon=85.777))
+    assert [r.label for r in res][:3] == ["Esplanade", "Esplanade Road", "Esplanade Lane"]
+
+
+def test_photon_dedupes_same_place_from_both_searches(monkeypatch):
+    res = run(
+        _photon_with_transport(monkeypatch, lambda r: httpx.Response(200, json=_fc(_LOCAL))).geocode(
+            "esplanade", lat=20.26, lon=85.777
+        )
+    )
+    assert len(res) == 1
+
+
+def test_photon_survives_one_failed_search(monkeypatch):
+    def region_down(request: httpx.Request):
+        if "bbox" in request.url.params:
+            return httpx.Response(503)
+        return httpx.Response(200, json=_fc(_FAR))
+
+    res = run(_photon_with_transport(monkeypatch, region_down).geocode("esplanade", lat=20.26, lon=85.777))
+    assert [r.label for r in res] == ["One Esplanade"]
+
+
+def test_photon_raises_when_both_searches_fail(monkeypatch):
+    with pytest.raises(RoutingProviderError):
+        run(_photon_with_transport(monkeypatch, lambda r: httpx.Response(503)).geocode("e", lat=20.26, lon=85.777))
+
+
 def test_photon_timeout_and_http_error_become_provider_error(monkeypatch):
     def timeout(request):
         raise httpx.ReadTimeout("slow", request=request)
