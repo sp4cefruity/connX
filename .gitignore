@@ -91,3 +91,4 @@ docker-compose.override.yml
 .cache/
 tmp/
 .scratch/*
+.claude/*
