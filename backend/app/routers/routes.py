@@ -21,6 +21,7 @@ from app.schemas import (
 )
 from app.services import scoring
 from app.services.overlap import compute_overlap
+from app.services.red_zone import build_red_zone_band
 from app.services.redspots import find_red_spot_hits
 
 router = APIRouter(prefix="/api/routes", tags=["routes"])
@@ -63,12 +64,13 @@ async def compare_routes(
     except RoutingProviderError as exc:
         raise HTTPException(status_code=502, detail="Couldn't find a route between these locations.") from exc
 
-    tolerance_m = settings.overlap_sensitivity_presets[payload.sensitivity]
+    # Overlap uses the fixed tolerance only; the danger distance just sizes
+    # the red zone band (ADR 0001).
     overlap = compute_overlap(
         route_a_geometry=primary.geometry,
         route_a_duration_min=primary.duration_min,
         route_b_geometry=comparison.geometry,
-        tolerance_m=tolerance_m,
+        tolerance_m=settings.overlap_tolerance_m,
         min_meaningful_overlap_m=settings.min_meaningful_overlap_m,
         merge_gap_m=settings.overlap_merge_gap_m,
     )
@@ -82,6 +84,7 @@ async def compare_routes(
         primary_route=primary,
         comparison_route=comparison,
         overlap=overlap,
+        red_zone_band=build_red_zone_band(comparison.geometry, payload.danger_distance_m),
         red_spots=red_spot_hits,
     )
 
@@ -118,7 +121,7 @@ async def recommend_route(
 
     spots = get_active_red_spots(db, user.id) if payload.avoid_red_spots else []
 
-    tolerance_m = settings.overlap_sensitivity_presets[payload.sensitivity]
+    tolerance_m = settings.overlap_tolerance_m
     fastest_duration = min(c.duration_min for c in candidates)
     shortest_distance = min(c.distance_km for c in candidates)
     fastest_route = min(candidates, key=lambda c: c.duration_min)
@@ -174,4 +177,11 @@ async def recommend_route(
 
     recommended_index = next(i for i, s in enumerate(scored) if s.tier == "recommended")
 
-    return RecommendResponse(routes=scored, recommended_index=recommended_index, comparison_route=comparison)
+    red_zone_band = build_red_zone_band(comparison.geometry, payload.danger_distance_m) if comparison else None
+
+    return RecommendResponse(
+        routes=scored,
+        recommended_index=recommended_index,
+        comparison_route=comparison,
+        red_zone_band=red_zone_band,
+    )

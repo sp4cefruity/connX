@@ -2,12 +2,11 @@
 Route overlap detection (spec §7-9, §31).
 
 Approach:
-  1. Project both routes from lon/lat into a local metric plane (simple
-     equirectangular projection around the route's mean latitude — good
-     to within ~0.1% at city scale, which is fine for a 20-500m
-     tolerance). Production PostGIS deployments should do this with
-     ST_Transform into a local UTM SRID instead; see init.sql.
-  2. Buffer route B by the tolerance to get a "corridor" polygon.
+  1. Project both routes from lon/lat into a local metric plane (see
+     app/services/projection.py).
+  2. Buffer route B by the fixed overlap tolerance (~25 m, "same road";
+     deliberately not the user-set danger distance, ADR 0001) to get a
+     "corridor" polygon.
   3. Intersect route A's line with that corridor. This answers "how much
      of *my* route runs inside a corridor around the other route" —
      which is what the user actually experiences as overlap.
@@ -21,39 +20,11 @@ Approach:
 This module is pure Python/Shapely — no DB or network — so it's unit
 tested directly (see tests/test_overlap.py).
 """
-import math
-from dataclasses import dataclass
-
 from shapely.geometry import LineString
 from shapely.ops import linemerge, substring, unary_union
 
 from app.schemas import LonLat, OverlapResult, OverlapSegment
-
-_METERS_PER_DEG_LAT = 111_320.0
-
-
-@dataclass
-class _Projection:
-    ref_lat: float
-
-    def to_xy(self, coords: list[LonLat]) -> list[tuple[float, float]]:
-        cos_lat = math.cos(math.radians(self.ref_lat))
-        return [
-            (c.lon * _METERS_PER_DEG_LAT * cos_lat, c.lat * _METERS_PER_DEG_LAT)
-            for c in coords
-        ]
-
-    def to_lonlat(self, coords) -> list[LonLat]:
-        cos_lat = math.cos(math.radians(self.ref_lat))
-        return [
-            LonLat(lon=x / (_METERS_PER_DEG_LAT * cos_lat), lat=y / _METERS_PER_DEG_LAT)
-            for x, y in coords
-        ]
-
-
-def _mean_lat(*coord_lists: list[LonLat]) -> float:
-    all_lats = [c.lat for coords in coord_lists for c in coords]
-    return sum(all_lats) / len(all_lats)
+from app.services.projection import Projection, mean_lat
 
 
 def _as_linestrings(geom) -> list[LineString]:
@@ -121,7 +92,7 @@ def compute_overlap(
     if len(route_a_geometry) < 2 or len(route_b_geometry) < 2:
         return OverlapResult(distance_km=0, percentage=0, duration_min=0, segments=[])
 
-    proj = _Projection(ref_lat=_mean_lat(route_a_geometry, route_b_geometry))
+    proj = Projection(ref_lat=mean_lat(route_a_geometry, route_b_geometry))
     a_line = LineString(proj.to_xy(route_a_geometry))
     b_line = LineString(proj.to_xy(route_b_geometry))
 

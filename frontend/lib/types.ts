@@ -1,5 +1,9 @@
 export type TravelMode = "driving" | "walking" | "cycling";
-export type Sensitivity = "low" | "medium" | "high";
+
+/** Danger distance bounds in metres (ADR 0001); must match the backend. */
+export const DANGER_DISTANCE_MIN_M = 50;
+export const DANGER_DISTANCE_MAX_M = 1000;
+export const DANGER_DISTANCE_DEFAULT_M = 200;
 
 export interface LonLat {
   lon: number;
@@ -70,15 +74,23 @@ export interface ScoredRoute {
   explanation: string[];
 }
 
+/** GeoJSON Polygon / MultiPolygon geometry, coordinates in [lon, lat]. */
+export type RedZoneBand =
+  | { type: "Polygon"; coordinates: number[][][] }
+  | { type: "MultiPolygon"; coordinates: number[][][][] };
+
 export interface RecommendResponse {
   routes: ScoredRoute[];
   recommended_index: number;
   comparison_route: RouteResult | null;
+  /** Route B buffered by the danger distance; null when there is no Route B. */
+  red_zone_band: RedZoneBand | null;
 }
 
 export interface CompareResponse {
   primary_route: RouteResult;
   comparison_route: RouteResult;
   overlap: OverlapResult;
+  red_zone_band: RedZoneBand | null;
   red_spots: RedSpotHit[];
 }

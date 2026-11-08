@@ -1,5 +1,13 @@
+from app.config import get_settings
 from app.schemas import LonLat
 from app.services.overlap import compute_overlap
+
+# Overlap uses one fixed tolerance ("same road", ADR 0001); it is not user-set.
+TOLERANCE_M = get_settings().overlap_tolerance_m
+
+
+def test_overlap_tolerance_is_fixed_at_about_25m():
+    assert TOLERANCE_M == 25.0
 
 
 def _line(coords: list[tuple[float, float]]) -> list[LonLat]:
@@ -8,14 +16,14 @@ def _line(coords: list[tuple[float, float]]) -> list[LonLat]:
 
 def test_identical_routes_overlap_100_percent():
     route = _line([(85.80, 20.29), (85.81, 20.30), (85.82, 20.31)])
-    result = compute_overlap(route, 10.0, route, tolerance_m=50, min_meaningful_overlap_m=20, merge_gap_m=25)
+    result = compute_overlap(route, 10.0, route, tolerance_m=TOLERANCE_M, min_meaningful_overlap_m=20, merge_gap_m=25)
     assert result.percentage > 95  # essentially full overlap
 
 
 def test_completely_different_routes_no_overlap():
     route_a = _line([(85.80, 20.29), (85.81, 20.30), (85.82, 20.31)])
     route_b = _line([(85.95, 20.50), (85.96, 20.51), (85.97, 20.52)])
-    result = compute_overlap(route_a, 10.0, route_b, tolerance_m=50, min_meaningful_overlap_m=20, merge_gap_m=25)
+    result = compute_overlap(route_a, 10.0, route_b, tolerance_m=TOLERANCE_M, min_meaningful_overlap_m=20, merge_gap_m=25)
     assert result.distance_km == 0
     assert result.percentage == 0
     assert result.segments == []
@@ -26,20 +34,26 @@ def test_single_crossing_is_not_counted_as_meaningful_overlap():
     # register as a large "shared segment" overlap (spec §31).
     route_a = _line([(85.80, 20.29), (85.82, 20.29)])  # west->east
     route_b = _line([(85.81, 20.28), (85.81, 20.30)])  # south->north, crosses A near midpoint
-    result = compute_overlap(route_a, 10.0, route_b, tolerance_m=15, min_meaningful_overlap_m=20, merge_gap_m=25)
+    result = compute_overlap(route_a, 10.0, route_b, tolerance_m=TOLERANCE_M, min_meaningful_overlap_m=20, merge_gap_m=25)
     assert result.percentage < 15
 
 
-def test_parallel_close_roads_flagged_at_high_sensitivity():
+def test_parallel_road_within_tolerance_counts_as_same_road():
     route_a = _line([(85.800, 20.290), (85.820, 20.290)])
-    # ~40m north of route_a throughout (roughly, at this latitude 0.0004 deg lat ~ 44m)
+    # ~11 m north of route_a throughout (0.0001 deg lat ~ 11 m): same road.
+    route_b = _line([(85.800, 20.2901), (85.820, 20.2901)])
+    result = compute_overlap(route_a, 10.0, route_b, tolerance_m=TOLERANCE_M, min_meaningful_overlap_m=20, merge_gap_m=25)
+    assert result.percentage > 95
+
+
+def test_parallel_road_beyond_tolerance_is_not_overlap():
+    route_a = _line([(85.800, 20.290), (85.820, 20.290)])
+    # ~44 m north of route_a throughout (0.0004 deg lat ~ 44 m): a different
+    # road. That is a near-miss for the danger distance, not Overlap.
     route_b = _line([(85.800, 20.2904), (85.820, 20.2904)])
-
-    low = compute_overlap(route_a, 10.0, route_b, tolerance_m=20, min_meaningful_overlap_m=20, merge_gap_m=25)
-    high = compute_overlap(route_a, 10.0, route_b, tolerance_m=100, min_meaningful_overlap_m=20, merge_gap_m=25)
-
-    assert high.percentage >= low.percentage
-    assert high.percentage > 50
+    result = compute_overlap(route_a, 10.0, route_b, tolerance_m=TOLERANCE_M, min_meaningful_overlap_m=20, merge_gap_m=25)
+    assert result.percentage == 0
+    assert result.segments == []
 
 
 def test_multiple_overlap_segments_detected_separately():
@@ -56,7 +70,7 @@ def test_multiple_overlap_segments_detected_separately():
     )
     route_b = _line([(85.800, 20.2901), (85.816, 20.2901)])
 
-    result = compute_overlap(route_a, 10.0, route_b, tolerance_m=30, min_meaningful_overlap_m=20, merge_gap_m=25)
+    result = compute_overlap(route_a, 10.0, route_b, tolerance_m=TOLERANCE_M, min_meaningful_overlap_m=20, merge_gap_m=25)
     assert len(result.segments) >= 2
 
 
@@ -71,7 +85,7 @@ def test_segments_are_ordered_along_route_a():
         ]
     )
     route_b = _line([(85.800, 20.2901), (85.816, 20.2901)])
-    result = compute_overlap(route_a, 10.0, route_b, tolerance_m=30, min_meaningful_overlap_m=20, merge_gap_m=25)
+    result = compute_overlap(route_a, 10.0, route_b, tolerance_m=TOLERANCE_M, min_meaningful_overlap_m=20, merge_gap_m=25)
 
     fractions = [s.start_fraction for s in result.segments]
     assert fractions == sorted(fractions)

@@ -45,9 +45,10 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:3000"
     session_secret: str = "change-me-in-production"
 
-    # Overlap detection defaults (spec sections 7 and 30)
-    default_overlap_tolerance_m: float = 50.0
-    overlap_sensitivity_presets: dict = {"low": 20.0, "medium": 50.0, "high": 100.0}
+    # Overlap tolerance: how close counts as "the same road". Fixed, not
+    # user-set, and deliberately separate from the user's danger distance
+    # (ADR 0001).
+    overlap_tolerance_m: float = 25.0
 
     # Below this length, a shared segment is treated as an incidental
     # crossing rather than a meaningful overlap (spec section 31).

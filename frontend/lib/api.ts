@@ -4,7 +4,6 @@ import type {
   LonLat,
   RecommendResponse,
   RedSpot,
-  Sensitivity,
   TravelMode,
 } from "./types";
 
@@ -60,7 +59,7 @@ export async function compareRoutes(params: {
   comparisonStart: LonLat;
   comparisonEnd: LonLat;
   mode: TravelMode;
-  sensitivity: Sensitivity;
+  dangerDistanceM: number;
 }): Promise<CompareResponse> {
   return request("/api/routes/compare", {
     method: "POST",
@@ -70,7 +69,7 @@ export async function compareRoutes(params: {
       comparison_start: params.comparisonStart,
       comparison_end: params.comparisonEnd,
       mode: params.mode,
-      sensitivity: params.sensitivity,
+      danger_distance_m: params.dangerDistanceM,
       include_red_spots: true,
     }),
   });
@@ -82,7 +81,7 @@ export async function recommendRoutes(params: {
   comparisonStart?: LonLat;
   comparisonEnd?: LonLat;
   mode: TravelMode;
-  sensitivity: Sensitivity;
+  dangerDistanceM: number;
   avoidOverlap: boolean;
   avoidRedSpots: boolean;
 }): Promise<RecommendResponse> {
@@ -94,7 +93,7 @@ export async function recommendRoutes(params: {
       comparison_start: params.comparisonStart ?? null,
       comparison_end: params.comparisonEnd ?? null,
       mode: params.mode,
-      sensitivity: params.sensitivity,
+      danger_distance_m: params.dangerDistanceM,
       avoid_overlap: params.avoidOverlap,
       avoid_red_spots: params.avoidRedSpots,
       alternatives_count: 3,
