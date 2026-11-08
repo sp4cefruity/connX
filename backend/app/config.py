@@ -22,7 +22,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg2://connx:connx@localhost:5432/connx"
 
     routing_provider: str = "osrm"  # "osrm" | "mock"
-    osrm_base_url: str = "https://router.project-osrm.org"
+    # One OSRM server per mode: a server has a single baked-in profile and
+    # ignores the profile in the URL (ADR 0002).
+    osrm_driving_base_url: str = "https://routing.openstreetmap.de/routed-car"
+    osrm_walking_base_url: str = "https://routing.openstreetmap.de/routed-foot"
+    osrm_cycling_base_url: str = "https://routing.openstreetmap.de/routed-bike"
 
     geocoding_provider: str = "nominatim"  # "nominatim" | "mock"
     nominatim_base_url: str = "https://nominatim.openstreetmap.org"
