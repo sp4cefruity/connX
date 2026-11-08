@@ -3,7 +3,7 @@
 import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
-import type { LonLat, OverlapSegment, RedSpot, RouteResult } from "@/lib/types";
+import type { LonLat, OverlapSegment, RedSpot, RedZoneBand, RouteResult } from "@/lib/types";
 
 // OpenFreeMap vector basemap (no API key). Configurable so the provider or
 // style can be swapped without a code change (see ADR 0004).
@@ -23,7 +23,7 @@ const PALETTE = {
 };
 
 const EMPTY_FC = { type: "FeatureCollection" as const, features: [] };
-const SOURCE_IDS = ["primary-route", "comparison-route", "overlap-segments", "red-spots"];
+const SOURCE_IDS = ["primary-route", "comparison-route", "overlap-segments", "red-spots", "red-zone-band"];
 
 /**
  * Where custom layers go: just below the basemap's label layers, but still
@@ -67,6 +67,14 @@ function addCustomLayers(map: maplibregl.Map) {
     if (!map.getLayer(layer.id)) map.addLayer(layer, before);
   };
 
+  // Red zone band — translucent area of the danger distance around Route B,
+  // below every route line.
+  add({
+    id: "red-zone-band-fill",
+    type: "fill",
+    source: "red-zone-band",
+    paint: { "fill-color": PALETTE.ember, "fill-opacity": 0.16 },
+  });
   // Comparison route (Route B) — underneath primary
   add({
     id: "comparison-route-line",
@@ -241,6 +249,8 @@ interface MapViewProps {
   primaryRoute?: RouteResult | null;
   comparisonRoute?: RouteResult | null;
   overlapSegments?: OverlapSegment[];
+  /** Route B buffered by the danger distance (from the API). */
+  redZoneBand?: RedZoneBand | null;
   redSpots?: RedSpot[];
   onMapClick?: (lonLat: LonLat) => void;
   /** True while the user is placing a red spot — shows a crosshair cursor. */
@@ -251,6 +261,7 @@ export default function MapView({
   primaryRoute,
   comparisonRoute,
   overlapSegments = [],
+  redZoneBand = null,
   redSpots = [],
   onMapClick,
   picking = false,
@@ -265,10 +276,10 @@ export default function MapView({
   const clickHandlerRef = useRef(onMapClick);
   // Same idea for the data: `style.load` handlers (registered once) must push
   // the latest data when layers are re-added, not the first render's.
-  const dataRef = useRef({ primaryRoute, comparisonRoute, overlapSegments, redSpots });
+  const dataRef = useRef({ primaryRoute, comparisonRoute, overlapSegments, redZoneBand, redSpots });
   useEffect(() => {
     clickHandlerRef.current = onMapClick;
-    dataRef.current = { primaryRoute, comparisonRoute, overlapSegments, redSpots };
+    dataRef.current = { primaryRoute, comparisonRoute, overlapSegments, redZoneBand, redSpots };
   });
 
   // While placing a red spot the map should feel like a target, not a pan
@@ -320,7 +331,7 @@ export default function MapView({
   // Writes the latest data into the custom sources; optionally fits the view
   // to the routes (only when the data changed, not on a style reload).
   function pushData(map: maplibregl.Map, fit: boolean) {
-    const { primaryRoute, comparisonRoute, overlapSegments, redSpots } = dataRef.current;
+    const { primaryRoute, comparisonRoute, overlapSegments, redZoneBand, redSpots } = dataRef.current;
 
     const primarySrc = map.getSource("primary-route") as maplibregl.GeoJSONSource | undefined;
     const comparisonSrc = map.getSource("comparison-route") as maplibregl.GeoJSONSource | undefined;
@@ -343,6 +354,10 @@ export default function MapView({
       type: "FeatureCollection",
       features: redSpots.map((s) => toCircle(s)),
     });
+    (map.getSource("red-zone-band") as maplibregl.GeoJSONSource | undefined)?.setData({
+      type: "FeatureCollection",
+      features: redZoneBand ? [{ type: "Feature", properties: {}, geometry: redZoneBand }] : [],
+    });
 
     if (!fit) return;
     // Fit bounds to show both routes
@@ -362,6 +377,15 @@ export default function MapView({
       );
     }
   }
+
+  // The band changes on its own when the danger distance moves; don't re-fit
+  // the view for that.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current) return;
+    pushData(map, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [redZoneBand]);
 
   useEffect(() => {
     const map = mapRef.current;

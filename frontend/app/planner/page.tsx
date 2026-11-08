@@ -2,13 +2,18 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ConnXLogo from "@/components/ConnXLogo";
 import LocationField from "@/components/LocationField";
 import RedSpotPanel from "@/components/RedSpotPanel";
 import ResultsPanel from "@/components/ResultsPanel";
 import { ApiError, createRedSpot, deleteRedSpot, listRedSpots, recommendRoutes } from "@/lib/api";
-import type { GeocodeResult, LonLat, RedSpot, RouteResult, ScoredRoute, Sensitivity, TravelMode } from "@/lib/types";
+import {
+  DANGER_DISTANCE_DEFAULT_M,
+  DANGER_DISTANCE_MAX_M,
+  DANGER_DISTANCE_MIN_M,
+} from "@/lib/types";
+import type { GeocodeResult, LonLat, RedSpot, RedZoneBand, RouteResult, ScoredRoute, TravelMode } from "@/lib/types";
 
 // maplibre-gl is a large dependency (200KB+ gzipped) that touches WebGL and
 // `window` at module scope, which is incompatible with the server. A static
@@ -55,7 +60,9 @@ export default function PlannerPage() {
   }
 
   const [mode] = useState<TravelMode>("driving");
-  const [sensitivity] = useState<Sensitivity>("medium");
+  // How close Route B may come before it counts as too close; sets the width
+  // of the red zone band. Not the overlap tolerance (that is fixed server-side).
+  const [dangerDistance, setDangerDistance] = useState(DANGER_DISTANCE_DEFAULT_M);
   const [avoidOverlap, setAvoidOverlap] = useState(true);
   const [avoidRedSpots, setAvoidRedSpots] = useState(true);
 
@@ -65,6 +72,7 @@ export default function PlannerPage() {
 
   const [routes, setRoutes] = useState<ScoredRoute[]>([]);
   const [comparisonRoute, setComparisonRoute] = useState<RouteResult | null>(null);
+  const [redZoneBand, setRedZoneBand] = useState<RedZoneBand | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [status, setStatus] = useState("Enter both routes to compare");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -111,14 +119,30 @@ export default function PlannerPage() {
 
   const canCompare = primaryStart.point && primaryEnd.point;
 
-  async function handleCompare() {
+  // Moving the slider after a comparison redraws the band at the new width.
+  // The band is built server-side, so re-ask (debounced) for the same trips;
+  // overlap does not depend on the danger distance, so those numbers stay put.
+  useEffect(() => {
+    if (!redZoneBand) return;
+    const t = setTimeout(() => handleCompare({ keepSelection: true }), 350);
+    return () => clearTimeout(t);
+    // Only a slider change should trigger this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dangerDistance]);
+
+  // Only the newest request may update the page (slider drags fire several).
+  const compareSeq = useRef(0);
+
+  async function handleCompare(opts?: { keepSelection?: boolean }) {
     if (!primaryStart.point || !primaryEnd.point) return;
+    const seq = ++compareSeq.current;
+    const refresh = opts?.keepSelection ?? false; // slider refresh: keep status text as is
     setLoading(true);
     setErrorMsg(null);
-    setStatus("Finding routes…");
+    if (!refresh) setStatus("Finding routes…");
 
     try {
-      setTimeout(() => setStatus("Comparing routes…"), 250);
+      if (!refresh) setTimeout(() => setStatus("Comparing routes…"), 250);
 
       const result = await recommendRoutes({
         primaryStart: primaryStart.point,
@@ -126,11 +150,18 @@ export default function PlannerPage() {
         comparisonStart: compareStart.point ?? undefined,
         comparisonEnd: compareEnd.point ?? undefined,
         mode,
-        sensitivity,
+        dangerDistanceM: dangerDistance,
         avoidOverlap,
         avoidRedSpots,
       });
 
+      if (seq !== compareSeq.current) return;
+      setRedZoneBand(result.red_zone_band);
+      if (refresh) {
+        // Slider refresh: only the band changed. Leave the routes, selection
+        // and map view alone (the map re-fits whenever route objects change).
+        return;
+      }
       setRoutes(result.routes);
       setSelectedIndex(result.recommended_index);
       setComparisonRoute(result.comparison_route);
@@ -142,14 +173,15 @@ export default function PlannerPage() {
           : "No meaningful overlap detected"
       );
     } catch (err) {
+      if (seq !== compareSeq.current) return;
       if (err instanceof ApiError) {
         setErrorMsg(err.message || "Couldn't find a route between these locations.");
       } else {
         setErrorMsg("Something went wrong. Check your connection and try again.");
       }
-      setStatus("Enter both routes to compare");
+      if (!refresh) setStatus("Enter both routes to compare");
     } finally {
-      setLoading(false);
+      if (seq === compareSeq.current) setLoading(false);
     }
   }
 
@@ -226,8 +258,28 @@ export default function PlannerPage() {
             </label>
           </div>
 
+          <div className="mt-4 font-mono text-[11px] text-ink-dim">
+            <label htmlFor="danger-distance" className="flex items-center justify-between">
+              <span>Danger distance</span>
+              <span className="text-ember">
+                {dangerDistance >= 1000 ? `${dangerDistance / 1000} km` : `${dangerDistance} m`}
+              </span>
+            </label>
+            <input
+              id="danger-distance"
+              type="range"
+              min={DANGER_DISTANCE_MIN_M}
+              max={DANGER_DISTANCE_MAX_M}
+              step={50}
+              value={dangerDistance}
+              onChange={(e) => setDangerDistance(Number(e.target.value))}
+              className="mt-2 w-full accent-ember"
+            />
+            <p className="mt-1 text-[10px] opacity-70">Shaded red on the map around their route.</p>
+          </div>
+
           <button
-            onClick={handleCompare}
+            onClick={() => handleCompare()}
             disabled={!canCompare || loading}
             className="mt-4 w-full rounded-md bg-route-b py-3 font-mono text-xs uppercase tracking-wider text-[#160A2E] transition-opacity hover:opacity-90 disabled:opacity-40"
           >
@@ -265,6 +317,7 @@ export default function PlannerPage() {
         <MapView
           primaryRoute={selected?.route}
           comparisonRoute={comparisonRoute}
+          redZoneBand={redZoneBand}
           overlapSegments={selected?.overlap.segments}
           redSpots={redSpots}
           onMapClick={handleMapClick}

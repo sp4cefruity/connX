@@ -7,7 +7,18 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 TravelMode = Literal["driving", "walking", "cycling"]
-Sensitivity = Literal["low", "medium", "high"]
+
+# Danger distance bounds in metres (ADR 0001): the user-set width of the Red
+# zone band. Separate from the fixed overlap tolerance.
+DANGER_DISTANCE_MIN_M = 50.0
+DANGER_DISTANCE_MAX_M = 1000.0
+DANGER_DISTANCE_DEFAULT_M = 200.0
+
+
+def _danger_distance_field():
+    return Field(
+        default=DANGER_DISTANCE_DEFAULT_M, ge=DANGER_DISTANCE_MIN_M, le=DANGER_DISTANCE_MAX_M
+    )
 
 
 # ---------- shared geo primitives ----------
@@ -107,14 +118,22 @@ class CompareRequest(BaseModel):
     comparison_start: LonLat
     comparison_end: LonLat
     mode: TravelMode = "driving"
-    sensitivity: Sensitivity = "medium"
+    danger_distance_m: float = _danger_distance_field()
     include_red_spots: bool = True
+
+
+class GeoJsonPolygon(BaseModel):
+    """GeoJSON Polygon / MultiPolygon geometry, coordinates in [lon, lat]."""
+
+    type: Literal["Polygon", "MultiPolygon"]
+    coordinates: list
 
 
 class CompareResponse(BaseModel):
     primary_route: RouteResult
     comparison_route: RouteResult
     overlap: OverlapResult
+    red_zone_band: GeoJsonPolygon | None = None
     red_spots: list[RedSpotHit]
 
 
@@ -141,7 +160,7 @@ class RecommendRequest(BaseModel):
     comparison_start: LonLat | None = None
     comparison_end: LonLat | None = None
     mode: TravelMode = "driving"
-    sensitivity: Sensitivity = "medium"
+    danger_distance_m: float = _danger_distance_field()
     avoid_overlap: bool = True
     avoid_red_spots: bool = True
     alternatives_count: int = Field(default=3, ge=1, le=6)
@@ -151,3 +170,4 @@ class RecommendResponse(BaseModel):
     routes: list[ScoredRoute]
     recommended_index: int
     comparison_route: RouteResult | None = None
+    red_zone_band: GeoJsonPolygon | None = None
