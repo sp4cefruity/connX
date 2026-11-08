@@ -90,3 +90,4 @@ docker-compose.override.yml
 *.orig
 .cache/
 tmp/
+.scratch/*
