@@ -1,5 +1,38 @@
 Connecting hearts, hearts so much bigger than maps.
 
+## First-time setup
+
+Versions are pinned so everyone gets identical packages.
+
+**Prerequisites**
+
+- Python 3.12 (reference; matches the Docker image). 3.13 and 3.14 are verified too.
+- Node 20 or newer (`.nvmrc` says 20) with npm 10 or newer.
+
+**Install** (from the repo root)
+
+```bash
+# Backend: create a virtualenv and install the pinned packages
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r backend/requirements.txt
+
+# Frontend: `npm ci` installs exactly what package-lock.json says
+cd frontend && npm ci && cd ..
+```
+
+**Check it works**
+
+```bash
+cd backend && python -m pytest     # backend tests
+cd ../frontend && npm run lint && npm run build
+```
+
+Use `npm ci` (not `npm install`) so the lockfile is never rewritten. When you
+deliberately upgrade a package, change its pinned version, run the checks
+above, and commit `requirements.txt` / `package.json` / `package-lock.json`
+together.
+
 ## Running ConnX
 
 Three ways to run the stack - pick whichever fits your situation.

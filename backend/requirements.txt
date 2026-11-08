@@ -1,10 +1,17 @@
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.6
-sqlalchemy>=2.0.35
-psycopg2-binary>=2.9.9
-shapely>=2.0.6
-httpx>=0.27.2
-pydantic>=2.9.2
-pydantic-settings>=2.5.2
-python-dotenv>=1.0.1
-itsdangerous>=2.2.0
+# Exact versions, tested together (pytest passes on all of them).
+# Pinned so everyone gets identical packages. To upgrade, bump deliberately,
+# run `pytest`, then commit the new pins.
+#
+# Python: 3.12 is the reference (matches backend/Dockerfile). A clean install
+# of these pins was verified to pass the tests on Python 3.13 and 3.14.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+sqlalchemy==2.0.52
+psycopg2-binary==2.9.12
+shapely==2.1.2
+httpx==0.28.1
+pydantic==2.13.4
+pydantic-settings==2.15.0
+python-dotenv==1.2.3
+itsdangerous==2.2.0
+pytest==9.2.0

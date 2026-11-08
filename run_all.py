@@ -157,7 +157,7 @@ def main():
     check_database(os.environ.copy())
 
     if not (FRONTEND_DIR / "node_modules").exists():
-        print("Note: frontend/node_modules is missing - run 'npm install' in")
+        print("Note: frontend/node_modules is missing - run 'npm ci' in")
         print("frontend/ once, or Next.js will fail to start below.\n")
 
     # -m uvicorn (not app/main.py): running a script by path only puts
