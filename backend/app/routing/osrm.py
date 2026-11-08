@@ -1,31 +1,41 @@
 """
-Routing via OSRM (Open Source Routing Machine).
+Routing via OSRM (Open Source Routing Machine), one server per travel mode.
 
-Uses the free public demo server by default (router.project-osrm.org),
-which is fine for development but is rate-limited and explicitly not
-licensed for production traffic — see https://project-osrm.org/. For
-production, point OSRM_BASE_URL at a self-hosted OSRM instance or swap
-this module out for a commercial provider (Mapbox/Google/GraphHopper)
-behind the same RoutingProvider interface.
+OSRM ignores the profile segment in the URL path: a server is built with a
+single profile (car, foot or bike) and answers every /route/v1/<anything>/...
+request with that profile. The public demo (router.project-osrm.org) is
+car-only, so asking it for "foot" or "bike" silently returns the driving
+route. To get correct routes per mode we therefore point each mode at its
+own server (see docs/adr/0002-per-mode-osm-routing-servers.md). The OSM
+German servers (routing.openstreetmap.de/routed-car|foot|bike) are the
+defaults; the path profile is always "driving" because the server, not the
+URL, decides the profile. For production, point the per-mode settings at
+self-hosted OSRM instances.
 """
 import httpx
 
 from app.routing.base import RoutingProviderError
 from app.schemas import LonLat, RouteResult, TravelMode
 
-_PROFILE_MAP: dict[TravelMode, str] = {
-    "driving": "driving",
-    "walking": "foot",
-    "cycling": "bike",
-}
+# The URL profile is cosmetic (the server's own profile wins); "driving" is
+# the value every OSRM build accepts.
+_URL_PROFILE = "driving"
 
 
 class OSRMRouting:
-    def __init__(self, base_url: str):
-        self.base_url = base_url.rstrip("/")
+    def __init__(
+        self,
+        base_urls: dict[TravelMode, str],
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
+        self.base_urls = {mode: url.rstrip("/") for mode, url in base_urls.items()}
+        self._transport = transport
 
-    def _profile(self, mode: TravelMode) -> str:
-        return _PROFILE_MAP.get(mode, "driving")
+    def _base_url(self, mode: TravelMode) -> str:
+        try:
+            return self.base_urls[mode]
+        except KeyError:
+            raise RoutingProviderError(f"No routing server configured for mode '{mode}'") from None
 
     async def get_route(self, start: LonLat, end: LonLat, mode: TravelMode) -> RouteResult:
         routes = await self.get_alternative_routes(start, end, mode, count=1)
@@ -36,9 +46,8 @@ class OSRMRouting:
     async def get_alternative_routes(
         self, start: LonLat, end: LonLat, mode: TravelMode, count: int = 3
     ) -> list[RouteResult]:
-        profile = self._profile(mode)
         coords = f"{start.lon},{start.lat};{end.lon},{end.lat}"
-        url = f"{self.base_url}/route/v1/{profile}/{coords}"
+        url = f"{self._base_url(mode)}/route/v1/{_URL_PROFILE}/{coords}"
         params = {
             "alternatives": "true" if count > 1 else "false",
             "overview": "full",
@@ -46,7 +55,7 @@ class OSRMRouting:
             "steps": "false",
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, transport=self._transport) as client:
             try:
                 resp = await client.get(url, params=params)
                 resp.raise_for_status()

@@ -37,7 +37,13 @@ def get_routing_provider() -> RoutingProvider:
     if settings.routing_provider == "mock":
         routing = MockRouting()
     else:
-        routing = OSRMRouting(settings.osrm_base_url)
+        routing = OSRMRouting(
+            {
+                "driving": settings.osrm_driving_base_url,
+                "walking": settings.osrm_walking_base_url,
+                "cycling": settings.osrm_cycling_base_url,
+            }
+        )
 
     if settings.geocoding_provider == "mock":
         geocoding = MockGeocoding()
