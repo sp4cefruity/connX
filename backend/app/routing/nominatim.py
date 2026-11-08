@@ -17,7 +17,14 @@ class NominatimGeocoding:
         self.base_url = base_url.rstrip("/")
         self.user_agent = user_agent
 
-    async def geocode(self, query: str, limit: int = 5) -> list[GeocodeResult]:
+    async def geocode(
+        self,
+        query: str,
+        limit: int = 5,
+        lat: float | None = None,
+        lon: float | None = None,
+    ) -> list[GeocodeResult]:
+        # lat/lon bias is accepted for interface parity with Photon but unused here.
         url = f"{self.base_url}/search"
         params = {"q": query, "format": "jsonv2", "limit": limit, "addressdetails": 0}
         headers = {"User-Agent": self.user_agent}

@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     routing_provider: str = "osrm"  # "osrm" | "mock"
     osrm_base_url: str = "https://router.project-osrm.org"
 
-    geocoding_provider: str = "nominatim"  # "nominatim" | "mock"
+    geocoding_provider: str = "photon"  # "photon" (Nominatim fallback) | "nominatim" | "mock"
+    photon_base_url: str = "https://photon.komoot.io"
+    photon_timeout_s: float = 3.0
     nominatim_base_url: str = "https://nominatim.openstreetmap.org"
     nominatim_user_agent: str = "ConnX/0.1 (dev)"
 

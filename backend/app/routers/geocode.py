@@ -1,4 +1,13 @@
-"""GET /api/geocode — spec §41. Cached in-memory (spec §47: cache geocoding results)."""
+"""GET /api/geocode — spec §41. Cached in-memory (spec §47: cache geocoding results).
+
+Optional `lat`/`lon` query params bias results toward the map viewport
+(ADR 0003). The bias is rounded and folded into the cache key so results for
+different viewports never collide, while tiny pans still hit the cache.
+
+If every geocoding provider fails the endpoint answers 503 with
+detail GEOCODE_UNAVAILABLE_DETAIL — a distinct signal the frontend uses to show
+a quiet "search is slow right now" state instead of an error.
+"""
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,16 +18,45 @@ from app.schemas import GeocodeResult
 
 router = APIRouter(prefix="/api/geocode", tags=["geocode"])
 
+GEOCODE_UNAVAILABLE_DETAIL = "search_slow"
+
 _CACHE: dict[str, tuple[float, list[GeocodeResult]]] = {}
 _CACHE_TTL_S = 60 * 30  # 30 minutes — place search results don't change fast
+_CACHE_MAX_ENTRIES = 2000
+_BIAS_DECIMALS = 1  # ~11 km: coarse enough that small pans reuse cached results
+
+
+def _round_bias(lat: float | None, lon: float | None) -> tuple[float, float] | None:
+    if lat is None or lon is None:
+        return None
+    return round(lat, _BIAS_DECIMALS), round(lon, _BIAS_DECIMALS)
+
+
+def make_cache_key(q: str, bias: tuple[float, float] | None) -> str:
+    key = q.strip().lower()
+    if bias is None:
+        return key
+    return f"{key}|{bias[0]:.{_BIAS_DECIMALS}f},{bias[1]:.{_BIAS_DECIMALS}f}"
+
+
+def _store(key: str, now: float, results: list[GeocodeResult]) -> None:
+    if len(_CACHE) >= _CACHE_MAX_ENTRIES:
+        for k in [k for k, (t, _) in _CACHE.items() if now - t >= _CACHE_TTL_S]:
+            del _CACHE[k]
+        if len(_CACHE) >= _CACHE_MAX_ENTRIES:
+            _CACHE.pop(next(iter(_CACHE)))  # evict oldest insertion
+    _CACHE[key] = (now, results)
 
 
 @router.get("", response_model=list[GeocodeResult])
 async def geocode(
     q: str = Query(..., min_length=1, max_length=200),
+    lat: float | None = Query(None, ge=-90, le=90),
+    lon: float | None = Query(None, ge=-180, le=180),
     provider: RoutingProvider = Depends(get_routing_provider),
 ):
-    key = q.strip().lower()
+    bias = _round_bias(lat, lon)
+    key = make_cache_key(q, bias)
     now = time.time()
 
     cached = _CACHE.get(key)
@@ -26,9 +64,16 @@ async def geocode(
         return cached[1]
 
     try:
-        results = await provider.geocode(q)
+        if bias is None:
+            results = await provider.geocode(q)
+        else:
+            results = await provider.geocode(q, lat=bias[0], lon=bias[1])
     except RoutingProviderError as exc:
-        raise HTTPException(status_code=502, detail="Couldn't search for that location right now.") from exc
+        raise HTTPException(
+            status_code=503,
+            detail=GEOCODE_UNAVAILABLE_DETAIL,
+            headers={"Retry-After": "2"},
+        ) from exc
 
-    _CACHE[key] = (now, results)
+    _store(key, now, results)
     return results

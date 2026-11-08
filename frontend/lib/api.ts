@@ -38,12 +38,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/** Backend answers 503 when every geocoding provider failed or timed out. */
+export function isSearchSlowError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 503;
+}
+
 export async function geocode(
   query: string,
-  opts?: { signal?: AbortSignal }
+  opts?: { signal?: AbortSignal; bias?: LonLat | null }
 ): Promise<GeocodeResult[]> {
   if (!query.trim()) return [];
-  return request(`/api/geocode?q=${encodeURIComponent(query)}`, { signal: opts?.signal });
+  let url = `/api/geocode?q=${encodeURIComponent(query)}`;
+  // Map centre biases results toward what the user is looking at.
+  if (opts?.bias) url += `&lat=${opts.bias.lat.toFixed(3)}&lon=${opts.bias.lon.toFixed(3)}`;
+  return request(url, { signal: opts?.signal });
 }
 
 export async function compareRoutes(params: {

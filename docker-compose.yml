@@ -23,7 +23,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://connx:connx@db:5432/connx
       ROUTING_PROVIDER: osrm
-      GEOCODING_PROVIDER: nominatim
+      GEOCODING_PROVIDER: photon
       ENVIRONMENT: development
       FRONTEND_ORIGIN: http://localhost:3000
       SESSION_SECRET: change-me-in-production

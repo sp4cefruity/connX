@@ -52,7 +52,13 @@ class MockRouting:
 
 
 class MockGeocoding:
-    async def geocode(self, query: str, limit: int = 5) -> list[GeocodeResult]:
+    async def geocode(
+        self,
+        query: str,
+        limit: int = 5,
+        lat: float | None = None,
+        lon: float | None = None,
+    ) -> list[GeocodeResult]:
         # Deterministic fake coordinates around Bhubaneswar so the demo is stable.
         base_lat, base_lon = 20.2961, 85.8245
         h = sum(ord(c) for c in query) % 100
