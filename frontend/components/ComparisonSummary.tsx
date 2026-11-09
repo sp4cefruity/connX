@@ -25,7 +25,7 @@ export default function ComparisonSummary({
       <div className="mb-2.5 font-body text-[14.5px] font-semibold">
         {route.duration_min} min · {route.distance_km} km
         {overlap.percentage > 0 && (
-          <span className="ml-2 font-mono text-[11.5px] font-normal text-ember">{overlap.percentage}% shared</span>
+          <span className="ml-2 font-mono text-[11.5px] font-normal text-overlap">{overlap.percentage}% shared</span>
         )}
       </div>
       <RouteFlags view={view} />

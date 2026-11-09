@@ -36,7 +36,7 @@ function StatusLine({ spot, hits, checking }: { spot: RedSpot; hits: RedSpotHit[
   }
   if (hit.intersects) {
     return (
-      <span className="text-[11px] font-medium text-ember">
+      <span className="text-[11px] font-medium text-red-zone">
         Hit: Route A passes {formatRadius(hit.min_distance_m)} from the centre
       </span>
     );
@@ -83,7 +83,7 @@ export default function RedSpotPanel({
             <div
               key={spot.id}
               className={`rounded-md border bg-panel-2 px-3 py-2 text-sm ${
-                isEditing ? "border-ember/60" : isHit ? "border-ember/40" : "border-border"
+                isEditing ? "border-red-zone/60" : isHit ? "border-red-zone/40" : "border-border"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -92,14 +92,14 @@ export default function RedSpotPanel({
                   className="flex min-w-0 flex-1 items-center gap-2 text-left hover:text-ink"
                   aria-label={`Edit ${spot.name}`}
                 >
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${isHit ? "bg-ember" : "bg-ember/40"}`} />
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${isHit ? "bg-red-zone" : "bg-red-zone/40"}`} />
                   <span className="truncate">{spot.name}</span>
                 </button>
                 <div className="flex shrink-0 items-center gap-3">
                   <span className="font-mono text-[10.5px] text-ink-dim">{formatRadius(spot.radius_m)}</span>
                   <button
                     onClick={() => onDelete(spot.id)}
-                    className="-m-2 p-2 text-[11px] text-ink-dim hover:text-ember"
+                    className="-m-2 p-2 text-[11px] text-ink-dim hover:text-danger"
                     aria-label={`Delete ${spot.name}`}
                   >
                     ✕
@@ -126,7 +126,7 @@ export default function RedSpotPanel({
             maxLength={120}
             onChange={(e) => onChangeDraft({ name: e.target.value })}
             placeholder="Priya's house"
-            className="mb-3 w-full rounded border border-border bg-bg px-2.5 py-1.5 text-sm outline-none focus:border-route-a"
+            className="mb-3 w-full rounded border border-border bg-bg px-2.5 py-1.5 text-sm outline-none focus:border-accent"
           />
           <label htmlFor="red-spot-radius" className="mb-1 block text-[11px] text-ink-dim">
             Radius: {formatRadius(draft.radius_m)}
@@ -139,21 +139,21 @@ export default function RedSpotPanel({
             step={RADIUS_STEP_M}
             value={draft.radius_m}
             onChange={(e) => onChangeDraft({ radius_m: Number(e.target.value) })}
-            className="mb-1 w-full accent-ember"
+            className="mb-1 w-full accent-red-zone"
           />
           <div className="mb-3 flex justify-between font-mono text-[10px] text-ink-dim">
             <span>{formatRadius(MIN_RADIUS_M)}</span>
             <span>{formatRadius(MAX_RADIUS_M)}</span>
           </div>
           <p className="mb-3 text-[11px] leading-snug text-ink-dim">
-            On the map, drag the orange dot to move the spot or the white dot to resize it.
+            On the map, drag the red dot to move the spot or the white dot to resize it.
           </p>
-          {error && <p className="mb-2 text-[11px] text-ember">{error}</p>}
+          {error && <p className="mb-2 text-[11px] text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
               onClick={onSave}
               disabled={!draft.name.trim() || saving}
-              className="flex-1 rounded bg-ember py-2 font-mono text-[11px] uppercase tracking-wide text-white disabled:opacity-40"
+              className="flex-1 rounded bg-red-zone py-2 font-mono text-[11px] uppercase tracking-wide text-on-red-zone disabled:opacity-40"
             >
               {saving ? "Saving…" : draft.id ? "Update" : "Save"}
             </button>
@@ -170,7 +170,7 @@ export default function RedSpotPanel({
           onClick={picking ? onCancel : onStartAdding}
           className={`w-full rounded-md border border-dashed py-2.5 text-center font-mono text-[11.5px] transition-colors ${
             picking
-              ? "border-route-a text-route-a"
+              ? "border-accent text-accent"
               : "border-border text-ink-dim hover:border-ink-dim hover:text-ink"
           }`}
         >

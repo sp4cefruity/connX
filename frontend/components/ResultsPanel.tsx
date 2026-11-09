@@ -36,8 +36,8 @@ export default function ResultsPanel({ routes, selectedIndex, onSelect, placemen
             onClick={() => onSelect(i)}
             className={`rounded-lg border p-3.5 text-left transition-colors ${
               i === selectedIndex
-                ? "border-route-a shadow-[0_0_0_1px_#5EE6C4]"
-                : "border-border hover:border-route-a/60"
+                ? "border-accent shadow-[0_0_0_1px_rgb(var(--c-accent))]"
+                : "border-border hover:border-accent/60"
             } bg-panel-2`}
           >
             <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-dim">{r.tier}</div>

@@ -1,8 +1,8 @@
 import { closePassSummary } from "@/lib/encounters";
 import type { RouteView } from "@/lib/types";
 
-function FlagLine({ tone, children }: { tone: "good" | "warn" | "bad"; children: React.ReactNode }) {
-  const dot = { good: "bg-route-a", warn: "bg-[#F5C24B]", bad: "bg-ember" }[tone];
+function FlagLine({ tone, children }: { tone: "none" | "overlap" | "encounter" | "redZone"; children: React.ReactNode }) {
+  const dot = { none: "bg-ink-dim", overlap: "bg-overlap", encounter: "bg-encounter", redZone: "bg-red-zone" }[tone];
   return (
     <div className="flex items-center gap-1.5 text-xs text-ink-dim">
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
@@ -18,15 +18,15 @@ export default function RouteFlags({ view }: { view: RouteView }) {
   return (
     <div className="flex flex-col gap-1">
       {overlap.percentage === 0 ? (
-        <FlagLine tone="good">No overlap</FlagLine>
+        <FlagLine tone="none">No overlap</FlagLine>
       ) : (
-        <FlagLine tone={overlap.percentage < 10 ? "warn" : "bad"}>{overlap.distance_km} km overlap</FlagLine>
+        <FlagLine tone="overlap">{overlap.distance_km} km overlap</FlagLine>
       )}
-      <FlagLine tone={encounters.length === 0 ? "good" : "warn"}>{closePassSummary(encounters)}</FlagLine>
+      <FlagLine tone={encounters.length === 0 ? "none" : "encounter"}>{closePassSummary(encounters)}</FlagLine>
       {hitNames.length === 0 ? (
-        <FlagLine tone="good">No red spots</FlagLine>
+        <FlagLine tone="none">No red spots</FlagLine>
       ) : (
-        <FlagLine tone="bad">Enters {hitNames.join(", ")}</FlagLine>
+        <FlagLine tone="redZone">Enters {hitNames.join(", ")}</FlagLine>
       )}
     </div>
   );

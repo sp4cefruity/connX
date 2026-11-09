@@ -23,7 +23,7 @@ export default function HeroField() {
         <ellipse className="overlap-glow" cx="410" cy="205" rx="130" ry="42" />
 
         <circle className="avoid-ring" cx="655" cy="130" r="26" />
-        <circle cx="655" cy="130" r="3" fill="#FF5A36" opacity="0.8" />
+        <circle cx="655" cy="130" r="3" className="fill-overlap" opacity="0.8" />
 
         <path
           className="path-line path-a draw"
