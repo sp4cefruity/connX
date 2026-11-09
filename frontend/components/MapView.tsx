@@ -10,6 +10,8 @@ import {
   type EditorGeometry,
   type EditorPatch,
 } from "@/lib/redSpotMap";
+import { basemapOverrides } from "@/lib/basemapStyle";
+import { DEFAULT_THEME, THEMES } from "@/lib/palette";
 import { circleRing } from "@/lib/redSpots";
 import { formatGap, type ZoomTarget } from "@/lib/encounters";
 import type { Encounter, LonLat, OverlapSegment, RedSpot, RedZoneBand, RouteResult } from "@/lib/types";
@@ -19,19 +21,11 @@ import type { Encounter, LonLat, OverlapSegment, RedSpot, RedZoneBand, RouteResu
 const MAP_STYLE_URL =
   process.env.NEXT_PUBLIC_MAP_STYLE_URL || "https://tiles.openfreemap.org/styles/dark";
 
-// App palette (mirrors frontend/tailwind.config.ts).
-const PALETTE = {
-  bg: "#0A0A12",
-  panel: "#12131D",
-  panel2: "#161826",
-  ink: "#ECEEF5",
-  inkDim: "#8A90A6",
-  routeA: "#5EE6C4",
-  routeB: "#B98CFF",
-  ember: "#FF5A36",
-  // Encounters: close passes that are not overlap. Amber, apart from ember (overlap, red zone).
-  encounter: "#F5C24B",
-};
+// Colours come from lib/palette.ts (also the source of the CSS variables).
+const THEME = THEMES[DEFAULT_THEME];
+const ROLE = THEME.roles;
+const UI = THEME.ui;
+const OPACITY = THEME.mapOpacity;
 
 const EMPTY_FC = { type: "FeatureCollection" as const, features: [] };
 // A stable default, so an omitted prop doesn't look like new data on every render.
@@ -94,7 +88,7 @@ function addCustomLayers(map: maplibregl.Map) {
     id: "red-zone-band-fill",
     type: "fill",
     source: "red-zone-band",
-    paint: { "fill-color": PALETTE.ember, "fill-opacity": 0.16 },
+    paint: { "fill-color": ROLE.redZone.color, "fill-opacity": OPACITY.band },
   });
   // Comparison route (Route B) — underneath primary
   add({
@@ -103,9 +97,9 @@ function addCustomLayers(map: maplibregl.Map) {
     source: "comparison-route",
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": PALETTE.routeB,
+      "line-color": ROLE.routeB.color,
       "line-width": 5,
-      "line-opacity": 0.8,
+      "line-opacity": ROLE.routeB.opacity,
       "line-blur": 1,
     },
   });
@@ -116,7 +110,7 @@ function addCustomLayers(map: maplibregl.Map) {
     source: "primary-route",
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": PALETTE.routeA,
+      "line-color": ROLE.routeA.color,
       "line-width": 10,
       "line-opacity": 0.25,
       "line-blur": 6,
@@ -128,9 +122,9 @@ function addCustomLayers(map: maplibregl.Map) {
     source: "primary-route",
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": PALETTE.routeA,
+      "line-color": ROLE.routeA.color,
       "line-width": 4,
-      "line-opacity": 0.95,
+      "line-opacity": ROLE.routeA.opacity,
     },
   });
   // Overlap segments — thick red on top of the routes
@@ -140,9 +134,9 @@ function addCustomLayers(map: maplibregl.Map) {
     source: "overlap-segments",
     layout: { "line-cap": "round", "line-join": "round" },
     paint: {
-      "line-color": PALETTE.ember,
+      "line-color": ROLE.overlap.color,
       "line-width": 7,
-      "line-opacity": 0.92,
+      "line-opacity": ROLE.overlap.opacity,
       "line-blur": 1,
     },
   });
@@ -154,8 +148,8 @@ function addCustomLayers(map: maplibregl.Map) {
     source: "encounter-markers",
     paint: {
       "circle-radius": 7,
-      "circle-color": PALETTE.encounter,
-      "circle-stroke-color": PALETTE.bg,
+      "circle-color": ROLE.encounter.color,
+      "circle-stroke-color": UI.bg,
       "circle-stroke-width": 2.5,
     },
   });
@@ -173,8 +167,8 @@ function addCustomLayers(map: maplibregl.Map) {
       "text-allow-overlap": true,
     },
     paint: {
-      "text-color": PALETTE.encounter,
-      "text-halo-color": PALETTE.bg,
+      "text-color": ROLE.encounter.color,
+      "text-halo-color": UI.bg,
       "text-halo-width": 2,
     },
   });
@@ -183,17 +177,17 @@ function addCustomLayers(map: maplibregl.Map) {
     type: "fill",
     source: "red-spots",
     // Spots that Route A hits are filled more strongly.
-    paint: { "fill-color": PALETTE.ember, "fill-opacity": ["case", ["boolean", ["get", "hit"], false], 0.28, 0.1] },
+    paint: { "fill-color": ROLE.redZone.color, "fill-opacity": ["case", ["boolean", ["get", "hit"], false], OPACITY.spotHitFill, OPACITY.spotFill] },
   });
   add({
     id: "red-spot-outline",
     type: "line",
     source: "red-spots",
     paint: {
-      "line-color": PALETTE.ember,
+      "line-color": ROLE.redZone.color,
       "line-width": 1.5,
       "line-dasharray": [3, 2],
-      "line-opacity": 0.55,
+      "line-opacity": OPACITY.spotOutline,
     },
   });
   // Red spot hit: solid, heavier outline on top of the dashed one.
@@ -202,20 +196,20 @@ function addCustomLayers(map: maplibregl.Map) {
     type: "line",
     source: "red-spots",
     filter: ["==", ["get", "hit"], true],
-    paint: { "line-color": PALETTE.ember, "line-width": 3, "line-opacity": 0.95 },
+    paint: { "line-color": ROLE.redZone.color, "line-width": 3, "line-opacity": ROLE.redZone.opacity },
   });
   // The spot being drawn / edited, and its drag handles (centre = move, edge = resize).
   add({
     id: "red-spot-draft-fill",
     type: "fill",
     source: "red-spot-draft",
-    paint: { "fill-color": PALETTE.ember, "fill-opacity": 0.2 },
+    paint: { "fill-color": ROLE.redZone.color, "fill-opacity": OPACITY.draftFill },
   });
   add({
     id: "red-spot-draft-outline",
     type: "line",
     source: "red-spot-draft",
-    paint: { "line-color": PALETTE.ember, "line-width": 2.5, "line-opacity": 0.95 },
+    paint: { "line-color": ROLE.redZone.color, "line-width": 2.5, "line-opacity": ROLE.redZone.opacity },
   });
   add({
     id: "red-spot-handles",
@@ -223,84 +217,26 @@ function addCustomLayers(map: maplibregl.Map) {
     source: "red-spot-handles",
     paint: {
       "circle-radius": 9,
-      "circle-color": ["match", ["get", "kind"], "radius", PALETTE.ink, PALETTE.ember],
-      "circle-stroke-color": ["match", ["get", "kind"], "radius", PALETTE.ember, PALETTE.ink],
+      "circle-color": ["match", ["get", "kind"], "radius", UI.ink, ROLE.redZone.color],
+      "circle-stroke-color": ["match", ["get", "kind"], "radius", ROLE.redZone.color, UI.ink],
       "circle-stroke-width": 3,
     },
   });
 }
 
 /**
- * Retint the stock OpenFreeMap dark style to the app palette by overriding
- * paint properties after the style loads (no forked style file). Layer ids not
- * present in the loaded style are skipped, so a different configured style
- * degrades to "stock" instead of throwing.
+ * Retint the stock OpenFreeMap style to the theme (see lib/basemapStyle.ts)
+ * by overriding paint properties after the style loads. Layer ids not present
+ * in the loaded style are skipped, so a different configured style degrades
+ * to "stock" instead of throwing.
  */
-function tuneDarkStyle(map: maplibregl.Map) {
-  const paint = (id: string, prop: string, value: unknown) => {
-    if (map.getLayer(id)) map.setPaintProperty(id, prop, value);
-  };
-
-  paint("background", "background-color", PALETTE.bg);
-  paint("water", "fill-color", "#0E1626");
-  paint("waterway", "line-color", "#0E1626");
-  paint("landcover_ice_shelf", "fill-color", PALETTE.panel);
-  paint("landcover_glacier", "fill-color", PALETTE.panel);
-  paint("landuse_residential", "fill-color", "#0E0F19");
-  paint("landuse_residential", "fill-opacity", 0.6);
-  paint("landuse_park", "fill-color", "#0F1A1B");
-  paint("landcover_wood", "fill-color", "#0F1A1B");
+function tuneBasemap(map: maplibregl.Map) {
+  for (const { layer, prop, value } of basemapOverrides(THEME)) {
+    if (map.getLayer(layer)) map.setPaintProperty(layer, prop, value);
+  }
   // The wood layer uses a sprite pattern that ignores fill-color; hide it and
   // let landuse_park carry the greenery.
   if (map.getLayer("landcover_wood")) map.setLayoutProperty("landcover_wood", "visibility", "none");
-  paint("building", "fill-color", "#11121D");
-  paint("building", "fill-outline-color", "#1A1C2C");
-
-  // Roads: lighter than the land so streets read, quiet enough for routes.
-  paint("highway_path", "line-color", "#23263A");
-  paint("highway_minor", "line-color", "#1D2033");
-  paint("highway_major_casing", "line-color", "#0A0A12");
-  paint("highway_major_inner", "line-color", "#272A42");
-  paint("highway_major_subtle", "line-color", "#272A42");
-  paint("highway_motorway_casing", "line-color", "#0A0A12");
-  paint("highway_motorway_inner", "line-color", "#33375A");
-  paint("highway_motorway_subtle", "line-color", "#272A42");
-  paint("aeroway-taxiway", "line-color", "#1D2033");
-  paint("aeroway-runway", "line-color", "#272A42");
-  paint("aeroway-area", "fill-color", PALETTE.panel2);
-  for (const id of ["railway", "railway_minor", "railway_transit"]) paint(id, "line-color", "#1E2134");
-  for (const id of ["railway_dashline", "railway_minor_dashline", "railway_transit_dashline"]) {
-    paint(id, "line-color", PALETTE.bg);
-  }
-  paint("boundary_state", "line-color", "#2A2D44");
-  paint("boundary_country_z0-4", "line-color", "#33375A");
-  paint("boundary_country_z5-", "line-color", "#33375A");
-
-  // Labels: ink-dim on a bg-coloured halo so they stay crisp over any fill.
-  const labelIds = [
-    "water_name",
-    "highway_name_other",
-    "highway_name_motorway",
-    "place_other",
-    "place_suburb",
-    "place_village",
-    "place_town",
-    "place_city",
-    "place_city_large",
-    "place_state",
-    "place_country_other",
-    "place_country_minor",
-    "place_country_major",
-  ];
-  for (const id of labelIds) {
-    paint(id, "text-color", id === "water_name" ? "#4C5A7A" : PALETTE.inkDim);
-    paint(id, "text-halo-color", PALETTE.bg);
-    paint(id, "text-halo-width", 1.5);
-    paint(id, "text-halo-blur", 0.5);
-  }
-  for (const id of ["place_city", "place_city_large", "place_country_major"]) {
-    paint(id, "text-color", PALETTE.ink);
-  }
 }
 
 function toLineString(points: LonLat[]) {
@@ -429,7 +365,7 @@ export default function MapView({
     // layers always survive a style swap.
     map.on("style.load", () => {
       loadedRef.current = true;
-      tuneDarkStyle(map);
+      tuneBasemap(map);
       addCustomLayers(map);
       pushData(map, false);
       pushSpotData(map);

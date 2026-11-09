@@ -21,7 +21,7 @@ export default function EncounterPanel({
   return (
     <div>
       <div className="mb-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider">
-        <span className="h-1.5 w-1.5 rounded-full bg-[#F5C24B]" />
+        <span className="h-1.5 w-1.5 rounded-full bg-encounter" />
         Close passes
         {encounters.length > 0 && <span className="text-ink-dim">· {encounters.length}</span>}
       </div>
@@ -37,9 +37,9 @@ export default function EncounterPanel({
               <button
                 type="button"
                 onClick={() => onSelect(e)}
-                className="flex w-full items-center gap-3 rounded-md border border-border bg-panel-2 px-3 py-2 text-left transition-colors hover:border-[#F5C24B]/70"
+                className="flex w-full items-center gap-3 rounded-md border border-border bg-panel-2 px-3 py-2 text-left transition-colors hover:border-encounter/70"
               >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F5C24B] font-mono text-[10px] font-semibold text-[#1A1405]">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-encounter font-mono text-[10px] font-semibold text-on-encounter">
                   {i + 1}
                 </span>
                 <span className="flex-1 font-body text-[13px] font-semibold">{formatGap(e.min_gap_m)} gap</span>

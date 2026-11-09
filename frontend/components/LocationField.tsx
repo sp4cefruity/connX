@@ -230,7 +230,7 @@ export default function LocationField({
   return (
     <div className="relative mb-2.5" ref={fieldRef}>
       <label className="mb-1.5 block text-[11px] text-ink-dim">{label}</label>
-      <div className="flex items-center gap-2 rounded-md border border-border bg-panel-2 px-3 py-2.5 focus-within:border-route-a/40 transition-colors">
+      <div className="flex items-center gap-2 rounded-md border border-border bg-panel-2 px-3 py-2.5 focus-within:border-accent/40 transition-colors">
         <input
           ref={inputRef}
           type="text"
@@ -249,7 +249,7 @@ export default function LocationField({
           onFocus={() => {
             if (results.length > 0) setOpen(true);
           }}
-          className="w-full bg-transparent font-body text-sm text-ink outline-none placeholder:text-[#565b6e]"
+          className="w-full bg-transparent font-body text-sm text-ink outline-none placeholder:text-ink-faint"
         />
         {loading && (
           <svg className="h-3.5 w-3.5 animate-spin text-ink-dim" viewBox="0 0 16 16" fill="none">
@@ -270,7 +270,7 @@ export default function LocationField({
           type="button"
           onClick={useMyLocation}
           disabled={geoLoading}
-          className="mt-1.5 flex items-center gap-1.5 font-mono text-[10.5px] tracking-wide text-route-a hover:text-route-a/80 transition-colors disabled:opacity-50"
+          className="mt-1.5 flex items-center gap-1.5 font-mono text-[10.5px] tracking-wide text-accent hover:text-accent/80 transition-colors disabled:opacity-50"
         >
           {geoLoading ? (
             <>

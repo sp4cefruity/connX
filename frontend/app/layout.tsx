@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Space_Grotesk } from "next/font/google";
 import "./globals.css";
+import { themeCss } from "@/lib/palette";
 
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -29,6 +30,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
+      <head>
+        {/* Colour tokens for every theme (lib/palette.ts). */}
+        <style dangerouslySetInnerHTML={{ __html: themeCss() }} />
+      </head>
       <body className="font-body">{children}</body>
     </html>
   );

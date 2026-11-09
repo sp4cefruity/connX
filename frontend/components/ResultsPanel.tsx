@@ -10,8 +10,8 @@ interface ResultsPanelProps {
   redSpotCount?: number;
 }
 
-function FlagLine({ tone, children }: { tone: "good" | "warn" | "bad"; children: React.ReactNode }) {
-  const dot = { good: "bg-route-a", warn: "bg-[#F5C24B]", bad: "bg-ember" }[tone];
+function FlagLine({ tone, children }: { tone: "none" | "overlap" | "redZone"; children: React.ReactNode }) {
+  const dot = { none: "bg-ink-dim", overlap: "bg-overlap", redZone: "bg-red-zone" }[tone];
   return (
     <div className="flex items-center gap-1.5 text-xs text-ink-dim">
       <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
@@ -34,7 +34,7 @@ export default function ResultsPanel({
       <div className="mb-3.5 flex items-center justify-between">
         <h3 className="font-display text-sm font-semibold">{routes.length} routes compared</h3>
         {overlapSummary && (
-          <span className="font-mono text-[11.5px] text-ember">
+          <span className="font-mono text-[11.5px] text-overlap">
             {overlapSummary.distanceKm} km overlap
             {typeof redSpotCount === "number" ? ` · ${redSpotCount} red spot${redSpotCount === 1 ? "" : "s"} flagged` : ""}
           </span>
@@ -50,8 +50,8 @@ export default function ResultsPanel({
               onClick={() => onSelect(i)}
               className={`rounded-lg border p-3.5 text-left transition-colors ${
                 i === selectedIndex
-                  ? "border-route-a shadow-[0_0_0_1px_#5EE6C4]"
-                  : "border-border hover:border-route-a/60"
+                  ? "border-accent shadow-[0_0_0_1px_rgb(var(--c-accent))]"
+                  : "border-border hover:border-accent/60"
               } bg-panel-2`}
             >
               <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-dim">
@@ -62,16 +62,14 @@ export default function ResultsPanel({
               </div>
               <div className="flex flex-col gap-1">
                 {r.overlap.percentage === 0 ? (
-                  <FlagLine tone="good">No overlap</FlagLine>
-                ) : r.overlap.percentage < 10 ? (
-                  <FlagLine tone="warn">{r.overlap.distance_km} km overlap</FlagLine>
+                  <FlagLine tone="none">No overlap</FlagLine>
                 ) : (
-                  <FlagLine tone="bad">{r.overlap.distance_km} km overlap</FlagLine>
+                  <FlagLine tone="overlap">{r.overlap.distance_km} km overlap</FlagLine>
                 )}
                 {hitNames.length === 0 ? (
-                  <FlagLine tone="good">No red spots</FlagLine>
+                  <FlagLine tone="none">No red spots</FlagLine>
                 ) : (
-                  <FlagLine tone="bad">Enters {hitNames.join(", ")}</FlagLine>
+                  <FlagLine tone="redZone">Enters {hitNames.join(", ")}</FlagLine>
                 )}
               </div>
             </button>

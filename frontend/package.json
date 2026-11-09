@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run"
   },
   "dependencies": {
     "maplibre-gl": "4.7.1",
@@ -23,7 +24,8 @@
     "eslint-config-next": "14.2.35",
     "postcss": "8.4.47",
     "tailwindcss": "3.4.13",
-    "typescript": "5.6.3"
+    "typescript": "5.6.3",
+    "vitest": "3.2.7"
   },
   "engines": {
     "node": ">=20.0.0",

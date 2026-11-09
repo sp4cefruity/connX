@@ -5,24 +5,24 @@ import HeroField from "@/components/HeroField";
 const SEQUENCE = [
   { num: "01 · ENTER", label: "Where you're going", color: "text-route-a" },
   { num: "02 · COMPARE", label: "A route to steer clear of", color: "text-route-b" },
-  { num: "03 · OVERLAP", label: "See where paths cross", color: "text-ember" },
+  { num: "03 · OVERLAP", label: "See where paths cross", color: "text-overlap" },
   { num: "04 · AVOID", label: "Route around it", color: "text-route-b" },
   { num: "05 · GO", label: "One tap, new path", color: "text-route-a" },
 ];
 
 const STRIP = [
   {
-    swatch: "bg-route-a shadow-[0_0_8px_#5EE6C4]",
+    swatch: "bg-route-a shadow-[0_0_8px_rgb(var(--c-route-a))]",
     title: "Your route",
     body: "Wherever you're headed — traced end to end, distance and time attached, no jargon in between.",
   },
   {
-    swatch: "bg-route-b shadow-[0_0_8px_#B98CFF]",
+    swatch: "bg-route-b shadow-[0_0_8px_rgb(var(--c-route-b))]",
     title: "The route to avoid",
     body: "Any second route you want kept at a distance. It doesn't need to belong to anyone in particular.",
   },
   {
-    swatch: "bg-ember shadow-[0_0_8px_#FF5A36]",
+    swatch: "bg-overlap shadow-[0_0_8px_rgb(var(--c-overlap))]",
     title: "Where they meet",
     body: "Shared roads and marked zones are measured, not just drawn — then ranked alternatives route around them.",
   },

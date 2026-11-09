@@ -30,7 +30,7 @@ import type { GeocodeResult, LonLat, RedZoneBand, RouteResult, ScoredRoute, Trav
 const MapView = dynamic(() => import("@/components/MapView"), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full w-full items-center justify-center bg-[#08080F]">
+    <div className="flex h-full w-full items-center justify-center bg-bg">
       <div className="flex items-center gap-2 font-mono text-[11px] text-ink-dim">
         <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 16 16" fill="none">
           <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" opacity="0.3" />
@@ -195,7 +195,7 @@ export default function PlannerPage() {
 
         <div className="border-b border-border px-5 py-5">
           <div className="mb-3.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider">
-            <span className="h-1.5 w-1.5 rounded-full bg-route-a shadow-[0_0_6px_#5EE6C4]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-route-a shadow-[0_0_6px_rgb(var(--c-route-a))]" />
             Your route
           </div>
           <LocationField
@@ -223,7 +223,7 @@ export default function PlannerPage() {
 
         <div className="border-b border-border px-5 py-5">
           <div className="mb-3.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider">
-            <span className="h-1.5 w-1.5 rounded-full bg-route-b shadow-[0_0_6px_#B98CFF]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-route-b shadow-[0_0_6px_rgb(var(--c-route-b))]" />
             Route to avoid
           </div>
           <LocationField
@@ -245,11 +245,11 @@ export default function PlannerPage() {
 
           <div className="mt-3 flex flex-col gap-2 font-mono text-[11px] text-ink-dim">
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={avoidOverlap} onChange={(e) => setAvoidOverlap(e.target.checked)} className="accent-route-a" />
+              <input type="checkbox" checked={avoidOverlap} onChange={(e) => setAvoidOverlap(e.target.checked)} className="accent-overlap" />
               Avoid overlap
             </label>
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={avoidRedSpots} onChange={(e) => setAvoidRedSpots(e.target.checked)} className="accent-ember" />
+              <input type="checkbox" checked={avoidRedSpots} onChange={(e) => setAvoidRedSpots(e.target.checked)} className="accent-red-zone" />
               Avoid red spots
             </label>
           </div>
@@ -257,7 +257,7 @@ export default function PlannerPage() {
           <div className="mt-4 font-mono text-[11px] text-ink-dim">
             <label htmlFor="danger-distance" className="flex items-center justify-between">
               <span>Danger distance</span>
-              <span className="text-ember">
+              <span className="text-red-zone">
                 {dangerDistance >= 1000 ? `${dangerDistance / 1000} km` : `${dangerDistance} m`}
               </span>
             </label>
@@ -269,7 +269,7 @@ export default function PlannerPage() {
               step={50}
               value={dangerDistance}
               onChange={(e) => setDangerDistance(Number(e.target.value))}
-              className="mt-2 w-full accent-ember"
+              className="mt-2 w-full accent-red-zone"
             />
             <p className="mt-1 text-[10px] opacity-70">Shaded red on the map around their route.</p>
           </div>
@@ -277,13 +277,13 @@ export default function PlannerPage() {
           <button
             onClick={() => handleCompare()}
             disabled={!canCompare || loading}
-            className="mt-4 w-full rounded-md bg-route-b py-3 font-mono text-xs uppercase tracking-wider text-[#160A2E] transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="mt-4 w-full rounded-md bg-accent py-3 font-mono text-xs uppercase tracking-wider text-on-accent transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {loading ? "Comparing…" : "Compare routes"}
           </button>
 
           {errorMsg && (
-            <p className="mt-2.5 font-mono text-[11px] text-ember">{errorMsg}</p>
+            <p className="mt-2.5 font-mono text-[11px] text-danger">{errorMsg}</p>
           )}
         </div>
 
@@ -320,7 +320,7 @@ export default function PlannerPage() {
         </div>
       </aside>
 
-      <main className="relative bg-[#08080F]">
+      <main className="relative bg-bg">
         {/* Left-aligned and capped in width so it never runs under the zoom buttons (top-right). */}
         <div className="pointer-events-none absolute left-4 right-16 top-4 z-10 flex items-center gap-2 sm:left-5">
           <span className="truncate rounded-full border border-border bg-panel/70 px-2.5 py-1.5 font-mono text-[11px] text-ink-dim backdrop-blur-md">
