@@ -1,4 +1,4 @@
-import type { Encounter, LonLat, ScoredRoute } from "@/lib/types";
+import type { Encounter, LonLat } from "@/lib/types";
 
 export interface ZoomTarget {
   /** The points to bring into view. */
@@ -22,33 +22,10 @@ export function formatAlong(e: Encounter, routeDistanceKm: number): string {
   return `${(e.position_fraction * routeDistanceKm).toFixed(1)} km`;
 }
 
-/**
- * Same trip, different server response: identify a route by what it is, not
- * by its position in the list (ranking can change between requests).
- */
-function routeKey(r: ScoredRoute): string {
-  const g = r.route.geometry;
-  const first = g[0];
-  const last = g[g.length - 1];
-  return [r.route.distance_km, r.route.duration_min, g.length, first?.lon, first?.lat, last?.lon, last?.lat].join("|");
-}
-
-/**
- * Carry a refreshed response's encounters onto the routes already on screen.
- * The danger-distance slider changes encounters but nothing else, and keeping
- * the route objects themselves untouched stops the map from re-fitting.
- *
- * Returns null when any route on screen is missing from the response (the
- * candidate set changed), so the caller can replace the routes instead of
- * leaving encounters computed for the old danger distance.
- */
-export function withRefreshedEncounters(current: ScoredRoute[], fresh: ScoredRoute[]): ScoredRoute[] | null {
-  const byKey = new Map(fresh.map((r) => [routeKey(r), r.encounters]));
-  const out: ScoredRoute[] = [];
-  for (const r of current) {
-    const encounters = byKey.get(routeKey(r));
-    if (!encounters) return null;
-    out.push({ ...r, encounters });
-  }
-  return out;
+/** Card summary: "No close passes", "1 close pass · 60 m", "2 close passes · nearest 60 m". */
+export function closePassSummary(encounters: Encounter[]): string {
+  if (encounters.length === 0) return "No close passes";
+  const nearest = formatGap(Math.min(...encounters.map((e) => e.min_gap_m)));
+  if (encounters.length === 1) return `1 close pass · ${nearest}`;
+  return `${encounters.length} close passes · nearest ${nearest}`;
 }

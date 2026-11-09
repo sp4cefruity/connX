@@ -187,6 +187,7 @@ class CompareResponse(BaseModel):
 class RouteScoreBreakdown(BaseModel):
     time_penalty: float
     overlap_penalty: float
+    encounter_penalty: float
     red_zone_penalty: float
     distance_penalty: float
     total: float
