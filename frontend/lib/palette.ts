@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ConnX colour tokens: the one source of truth for the UI (through CSS
  * variables, see tailwind.config.ts) and the map layers (MapView imports this
  * file). Contrast and colour-vision checks over these values live in
@@ -98,7 +98,7 @@ export interface Theme {
   borderAlpha: number;
 }
 
-export const THEME_NAMES = ["dark"] as const;
+export const THEME_NAMES = ["dark", "light"] as const;
 export type ThemeName = (typeof THEME_NAMES)[number];
 export const DEFAULT_THEME: ThemeName = "dark";
 
@@ -151,7 +151,56 @@ const dark: Theme = {
   borderAlpha: 0.08,
 };
 
-export const THEMES: Record<ThemeName, Theme> = { dark };
+const LIGHT_UI: UiTokens = {
+  bg: "#F4F5F9",
+  panel: "#FFFFFF",
+  panel2: "#ECEEF4",
+  ink: "#14161F",
+  inkDim: "#454B61",
+  inkFaint: "#5F6579",
+  border: "#000000",
+  accent: "#007C46",
+  onAccent: "#FFFFFF",
+  danger: "#C23312",
+};
+
+const light: Theme = {
+  roles: {
+    routeA: { color: "#007C46", on: "#FFFFFF", mark: "line", opacity: 0.95 },
+    routeB: { color: "#7A45E0", on: "#FFFFFF", mark: "line", opacity: 0.95 },
+    overlap: { color: "#BE1480", on: "#FFFFFF", mark: "wide-line", opacity: 1 },
+    encounter: { color: "#0868B0", on: "#FFFFFF", mark: "dot", opacity: 1 },
+    redZone: { color: "#C43510", on: "#FFFFFF", mark: "area", opacity: 0.95 },
+  },
+  ui: LIGHT_UI,
+  basemap: {
+    background: LIGHT_UI.bg,
+    water: "#C9DCF0",
+    ice: "#FFFFFF",
+    residential: "#E9EBF2",
+    park: "#D6E8D3",
+    building: "#E3E5ED",
+    buildingOutline: "#D3D6E2",
+    path: "#CFD2DE",
+    minorRoad: "#FFFFFF",
+    roadCasing: "#D0D3DF",
+    majorRoad: "#FFFFFF",
+    motorway: "#FFFFFF",
+    aeroArea: "#E3E5ED",
+    rail: "#C3C7D6",
+    railDash: "#FFFFFF",
+    boundaryState: "#B9BDCE",
+    boundaryCountry: "#9EA3B8",
+    label: LIGHT_UI.inkDim,
+    labelMajor: LIGHT_UI.ink,
+    waterLabel: "#34568A",
+    labelHalo: LIGHT_UI.bg,
+  },
+  mapOpacity: { band: 0.14, spotFill: 0.1, spotHitFill: 0.25, spotOutline: 0.85, draftFill: 0.2, residential: 0.6 },
+  borderAlpha: 0.1,
+};
+
+export const THEMES: Record<ThemeName, Theme> = { dark, light };
 
 // ---- CSS variables, for Tailwind and globals.css ----------------------------
 

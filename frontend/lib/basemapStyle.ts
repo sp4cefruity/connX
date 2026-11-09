@@ -55,7 +55,10 @@ export function basemapOverrides(theme: Theme): PaintOverride[] {
   add("highway_motorway_subtle", "line-color", m.majorRoad);
   add("aeroway-taxiway", "line-color", m.minorRoad);
   add("aeroway-runway", "line-color", m.majorRoad);
+  add("aeroway-runway-casing", "line-color", m.roadCasing);
   add("aeroway-area", "fill-color", m.aeroArea);
+  add("road_area_pier", "fill-color", m.majorRoad);
+  add("road_pier", "line-color", m.majorRoad);
   for (const id of ["railway", "railway_minor", "railway_transit"]) add(id, "line-color", m.rail);
   for (const id of ["railway_dashline", "railway_minor_dashline", "railway_transit_dashline"]) {
     add(id, "line-color", m.railDash);

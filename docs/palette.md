@@ -1,10 +1,10 @@
-# Palette
+﻿# Palette
 
 Ticket 08. Source of truth: `frontend/lib/palette.ts`. The checks below run as
 tests (`npm test`, `frontend/lib/palette.test.ts`) for every theme in `THEMES`,
 so they keep holding when a colour changes.
 
-## Roles (dark theme)
+## Roles (dark theme; the light theme keeps the same five roles, see below)
 
 | Role | Colour | Drawn as | Where |
 |---|---|---|---|
@@ -68,6 +68,18 @@ Every pair clears 8 under protan and deutan, the common deficiencies. The one
 collapse is overlap vs red zone under tritan (about 4, rare). It is fixed with a
 second cue: solid wide line against translucent area with a dashed outline
 (`mark` in the tokens, enforced by the test).
+
+## Light theme roles
+
+| Role | Dark | Light |
+|---|---|---|
+| Route A | `#5EE6C4` teal | `#007C46` green |
+| Route B | `#B98CFF` violet | `#7A45E0` violet |
+| Overlap | `#F64DA6` magenta | `#BE1480` magenta |
+| Encounter | `#F5C24B` amber | `#0868B0` blue |
+| Red zone | `#FF5A36` orange-red | `#C43510` red-orange |
+
+Light roles must reach 4.5:1 on the pale panels, which makes yellow and bright teal impossible. Amber and teal were replaced by blue and green; amber on white could not stay apart from red-orange for protan and deutan. Same checks and thresholds as dark, same marks. Weak spots (all carry different marks): Route A vs overlap under deutan (6.6), Route A vs red zone under protan (about 8.6), Route A vs encounter under tritan (about 3). Route A vs Route B, which share a mark, is 10 under tritan. Route B line opacity is 0.95 and the path colour is lighter so Route B clears 3:1 over paths and the hit-spot fill. The basemap also retints `aeroway-runway-casing`, `road_pier` and `road_area_pier` now (stock grey otherwise).
 
 ## What changed from the first palette
 

@@ -11,7 +11,8 @@ import {
   type EditorPatch,
 } from "@/lib/redSpotMap";
 import { basemapOverrides } from "@/lib/basemapStyle";
-import { DEFAULT_THEME, THEMES } from "@/lib/palette";
+import { DEFAULT_THEME, THEMES, type Theme, type ThemeName } from "@/lib/palette";
+import { basemapStyleUrl, customLayerIds } from "@/lib/mapTheme";
 import { circleRing } from "@/lib/redSpots";
 import { formatGap, type ZoomTarget } from "@/lib/encounters";
 import { fitPadding, isDesktopLayout, type Padding } from "@/lib/layout";
@@ -19,14 +20,10 @@ import type { Encounter, LonLat, OverlapSegment, RedSpot, RedZoneBand, RouteResu
 
 // OpenFreeMap vector basemap (no API key). Configurable so the provider or
 // style can be swapped without a code change (see ADR 0004).
-const MAP_STYLE_URL =
-  process.env.NEXT_PUBLIC_MAP_STYLE_URL || "https://tiles.openfreemap.org/styles/dark";
+// The light style defaults to the same structure retinted (NEXT_PUBLIC_MAP_STYLE_URL_LIGHT overrides).
+const STYLE_URLS = basemapStyleUrl(process.env.NEXT_PUBLIC_MAP_STYLE_URL, process.env.NEXT_PUBLIC_MAP_STYLE_URL_LIGHT);
 
 // Colours come from lib/palette.ts (also the source of the CSS variables).
-const THEME = THEMES[DEFAULT_THEME];
-const ROLE = THEME.roles;
-const UI = THEME.ui;
-const OPACITY = THEME.mapOpacity;
 
 const EMPTY_FC = { type: "FeatureCollection" as const, features: [] };
 // A stable default, so an omitted prop doesn't look like new data on every render.
@@ -73,7 +70,10 @@ function findLabelAnchor(map: maplibregl.Map): string | undefined {
  * overlap segments, red spots). Idempotent, so it can be called again on every
  * `style.load` — swapping the basemap style at runtime drops custom layers.
  */
-function addCustomLayers(map: maplibregl.Map) {
+function addCustomLayers(map: maplibregl.Map, theme: Theme) {
+  const ROLE = theme.roles;
+  const UI = theme.ui;
+  const OPACITY = theme.mapOpacity;
   for (const id of SOURCE_IDS) {
     if (!map.getSource(id)) map.addSource(id, { type: "geojson", data: EMPTY_FC });
   }
@@ -231,8 +231,8 @@ function addCustomLayers(map: maplibregl.Map) {
  * in the loaded style are skipped, so a different configured style degrades
  * to "stock" instead of throwing.
  */
-function tuneBasemap(map: maplibregl.Map) {
-  for (const { layer, prop, value } of basemapOverrides(THEME)) {
+function tuneBasemap(map: maplibregl.Map, theme: Theme) {
+  for (const { layer, prop, value } of basemapOverrides(theme)) {
     if (map.getLayer(layer)) map.setPaintProperty(layer, prop, value);
   }
   // The wood layer uses a sprite pattern that ignores fill-color; hide it and
@@ -297,6 +297,8 @@ interface MapViewProps {
   onMapClick?: (lonLat: LonLat) => void;
   /** True while the user is placing a red spot — shows a crosshair cursor. */
   picking?: boolean;
+  /** Basemap and layer colours; switching it at runtime restyles the live map. */
+  theme?: ThemeName;
 }
 
 // Fit padding that still fits the map's current size (a phone's map is short).
@@ -320,6 +322,7 @@ export default function MapView({
   focus = null,
   onMapClick,
   picking = false,
+  theme = DEFAULT_THEME,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -335,7 +338,11 @@ export default function MapView({
   // Red spot drawing state, read by handlers that are registered once.
   const spotStateRef = useRef({ redSpots, hitSpotIds, editor, picking, onEditorChange, onSpotClick });
   const interactionsRef = useRef(false);
+  // The theme the basemap and custom layers are currently drawn in.
+  const themeRef = useRef(theme);
+  const appliedThemeRef = useRef<ThemeName | null>(null);
   useEffect(() => {
+    themeRef.current = theme;
     clickHandlerRef.current = onMapClick;
     dataRef.current = { primaryRoute, comparisonRoute, overlapSegments, redZoneBand, encounters };
     spotStateRef.current = { redSpots, hitSpotIds, editor, picking, onEditorChange, onSpotClick };
@@ -360,7 +367,7 @@ export default function MapView({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: MAP_STYLE_URL,
+      style: STYLE_URLS[themeRef.current],
       center: [85.8245, 20.2961],
       zoom: 12,
       maxZoom: 19,
@@ -372,8 +379,9 @@ export default function MapView({
     // layers always survive a style swap.
     map.on("style.load", () => {
       loadedRef.current = true;
-      tuneBasemap(map);
-      addCustomLayers(map);
+      appliedThemeRef.current = themeRef.current;
+      tuneBasemap(map, THEMES[themeRef.current]);
+      addCustomLayers(map, THEMES[themeRef.current]);
       pushData(map, false);
       pushSpotData(map);
       if (!interactionsRef.current) {
@@ -396,6 +404,23 @@ export default function MapView({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Theme switch at runtime. A different style URL goes through setStyle (the
+  // style.load handler above re-adds the custom layers); the same URL is just
+  // retinted in place, which avoids reloading the basemap. Either way the
+  // custom sources keep their data.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loadedRef.current || appliedThemeRef.current === theme) return;
+    if (STYLE_URLS[appliedThemeRef.current ?? DEFAULT_THEME] !== STYLE_URLS[theme]) {
+      map.setStyle(STYLE_URLS[theme], { diff: false });
+      return;
+    }
+    appliedThemeRef.current = theme;
+    for (const id of customLayerIds(map, SOURCE_IDS)) map.removeLayer(id);
+    tuneBasemap(map, THEMES[theme]);
+    addCustomLayers(map, THEMES[theme]);
+  }, [theme]);
 
   // Writes the latest data into the custom sources; optionally fits the view
   // to the routes (only when the data changed, not on a style reload).
