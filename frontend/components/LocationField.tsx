@@ -228,9 +228,13 @@ export default function LocationField({
           lastPickedRef.current = "Current location";
           onChange("Current location");
         }
+        // The parent writes its own label into the box; don't search for it.
+        lastPickedRef.current = "Current location";
         setNoMatches(false);
         setOpen(false);
         setResults([]);
+        abortRef.current?.abort();
+        clearTimeout(debounceRef.current);
         onUseLocation(loc);
         setGeoLoading(false);
       },
