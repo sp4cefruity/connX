@@ -38,6 +38,8 @@ export default function LocationField({
   const [activeIdx, setActiveIdx] = useState(-1);
   const [loading, setLoading] = useState(false);
   const [slow, setSlow] = useState(false);
+  // True once a search finished with nothing found, until the text changes again.
+  const [noMatches, setNoMatches] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
   const [rect, setRect] = useState<DropdownPlacement | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -66,6 +68,7 @@ export default function LocationField({
     const q = value.trim();
     if (lastPickedRef.current !== null && q === lastPickedRef.current.trim()) return;
     lastPickedRef.current = null;
+    setNoMatches(false);
 
     if (q.length < 2) {
       clearTimeout(debounceRef.current);
@@ -97,6 +100,7 @@ export default function LocationField({
         setResults(r);
         setActiveIdx(-1);
         setOpen(r.length > 0);
+        setNoMatches(r.length === 0);
       } catch (err) {
         if (timedOut || (!ctrl.signal.aborted && isSearchSlowError(err))) {
           // Quiet state, not an error: keep whatever the user was looking at.
@@ -269,6 +273,12 @@ export default function LocationField({
       {slow && !loading && (
         <p role="status" className="mt-1.5 font-mono text-[10.5px] text-ink-dim">
           Search is slow right now. Keep typing or try again in a moment.
+        </p>
+      )}
+
+      {noMatches && !loading && !slow && (
+        <p role="status" className="mt-1.5 font-mono text-[10.5px] text-ink-dim">
+          No places found. Try a different spelling or a nearby landmark.
         </p>
       )}
 

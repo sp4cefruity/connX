@@ -8,6 +8,8 @@ Status: accepted
 `router.project-osrm.org`. The public OSRM demo is believed to serve only the
 car profile regardless of the path profile, so walking and cycling likely
 return driving routes. This must be verified during implementation.
+Verified: an OSRM server bakes in one profile and ignores the profile segment of
+the URL, so the mode must be chosen by the server (base URL), not the path.
 
 ## Decision
 

@@ -117,6 +117,20 @@ export function usePlannerResults(inputs: PlannerInputs) {
     }
   }
 
+  /** Forget the current result (e.g. the travel mode changed, so it no longer applies). */
+  function reset() {
+    seq.current++;
+    last.current = null;
+    setView(null);
+    setComparison(null);
+    setRanking({ routes: [], selectedIndex: 0 });
+    setComparisonRoute(null);
+    setRedZoneBand(null);
+    setErrorMsg(null);
+    setPending(null);
+    setStatus(IDLE_STATUS);
+  }
+
   function request(kind: PlannerView) {
     const req = { ...inputs };
     last.current = { view: kind, inputs: req };
@@ -156,6 +170,7 @@ export function usePlannerResults(inputs: PlannerInputs) {
     loading: pending !== null,
     canCompare,
     canRecommend,
+    reset,
     compare: () => request("compare"),
     recommend: () => request("recommend"),
   };
