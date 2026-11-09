@@ -117,7 +117,7 @@ def test_factory_wires_per_mode_urls_from_settings(monkeypatch):
     get_routing_provider.cache_clear()
     try:
         provider = get_routing_provider()
-        assert provider._routing.base_urls == {
+        assert provider._routing._inner.base_urls == {
             "driving": "https://a.test",
             "walking": "https://b.test",
             "cycling": "https://c.test",

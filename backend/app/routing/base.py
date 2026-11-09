@@ -14,6 +14,13 @@ class RoutingProviderError(RuntimeError):
     """Raised when a provider fails (network, no route found, rate limit)."""
 
 
+class RoutingQuotaError(RoutingProviderError):
+    """The provider refused us for quota / auth reasons (HTTP 401, 403, 429).
+
+    Retrying right away will not help, so FallbackRouting stops asking the
+    provider for a while."""
+
+
 class RoutingProvider(ABC):
     @abstractmethod
     async def get_route(self, start: LonLat, end: LonLat, mode: TravelMode) -> RouteResult:

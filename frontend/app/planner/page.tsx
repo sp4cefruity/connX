@@ -52,7 +52,7 @@ type Endpoint = { label: string; point: LonLat | null };
 const TRAVEL_MODES: TravelMode[] = ["driving", "walking", "cycling"];
 
 export default function PlannerPage() {
-  const { theme, toggle: toggleTheme } = useTheme();
+  const { theme, ready: themeReady, toggle: toggleTheme } = useTheme();
   const [primaryStart, setPrimaryStart] = useState<Endpoint>({ label: "", point: null });
   const [primaryEnd, setPrimaryEnd] = useState<Endpoint>({ label: "", point: null });
   const [compareStart, setCompareStart] = useState<Endpoint>({ label: "", point: null });
@@ -327,6 +327,7 @@ export default function PlannerPage() {
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
 
+        {themeReady ? (
         <MapView
           primaryRoute={selected?.route}
           comparisonRoute={comparisonRoute}
@@ -344,6 +345,9 @@ export default function PlannerPage() {
           picking={spots.picking}
           theme={theme}
         />
+        ) : (
+          <div className="h-full w-full bg-bg" />
+        )}
 
         <div className="hidden md:block">{resultsCard("overlay")}</div>
       </main>

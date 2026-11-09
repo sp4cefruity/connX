@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ConnX colour tokens: the one source of truth for the UI (through CSS
  * variables, see tailwind.config.ts) and the map layers (MapView imports this
  * file). Contrast and colour-vision checks over these values live in

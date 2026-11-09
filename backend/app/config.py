@@ -21,7 +21,13 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg2://connx:connx@localhost:5432/connx"
 
-    routing_provider: str = "osrm"  # "osrm" | "mock"
+    routing_provider: str = "ors"  # "ors" (OSRM fallback) | "osrm" | "mock"
+    # OpenRouteService free tier: 2,000 directions/day, 40/min. Without a key
+    # "ors" quietly degrades to OSRM only (ADR 0005).
+    ors_api_key: str = ""
+    ors_base_url: str = "https://api.openrouteservice.org"
+    route_cache_ttl_s: float = 3600.0
+    route_cache_max_entries: int = 500
     # One OSRM server per mode: a server has a single baked-in profile and
     # ignores the profile in the URL (ADR 0002).
     osrm_driving_base_url: str = "https://routing.openstreetmap.de/routed-car"
