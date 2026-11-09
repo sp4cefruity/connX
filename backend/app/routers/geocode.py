@@ -8,10 +8,9 @@ If every geocoding provider fails the endpoint answers 503 with
 detail GEOCODE_UNAVAILABLE_DETAIL — a distinct signal the frontend uses to show
 a quiet "search is slow right now" state instead of an error.
 """
-import time
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.cache import TTLCache
 from app.routing import get_routing_provider
 from app.routing.base import RoutingProvider, RoutingProviderError
 from app.schemas import GeocodeResult
@@ -20,9 +19,9 @@ router = APIRouter(prefix="/api/geocode", tags=["geocode"])
 
 GEOCODE_UNAVAILABLE_DETAIL = "search_slow"
 
-_CACHE: dict[str, tuple[float, list[GeocodeResult]]] = {}
 _CACHE_TTL_S = 60 * 30  # 30 minutes — place search results don't change fast
 _CACHE_MAX_ENTRIES = 2000
+_CACHE: TTLCache[list[GeocodeResult]] = TTLCache(_CACHE_TTL_S, _CACHE_MAX_ENTRIES)
 _BIAS_DECIMALS = 1  # ~11 km: coarse enough that small pans reuse cached results
 
 
@@ -39,15 +38,6 @@ def make_cache_key(q: str, bias: tuple[float, float] | None) -> str:
     return f"{key}|{bias[0]:.{_BIAS_DECIMALS}f},{bias[1]:.{_BIAS_DECIMALS}f}"
 
 
-def _store(key: str, now: float, results: list[GeocodeResult]) -> None:
-    if len(_CACHE) >= _CACHE_MAX_ENTRIES:
-        for k in [k for k, (t, _) in _CACHE.items() if now - t >= _CACHE_TTL_S]:
-            del _CACHE[k]
-        if len(_CACHE) >= _CACHE_MAX_ENTRIES:
-            _CACHE.pop(next(iter(_CACHE)))  # evict oldest insertion
-    _CACHE[key] = (now, results)
-
-
 @router.get("", response_model=list[GeocodeResult])
 async def geocode(
     q: str = Query(..., min_length=1, max_length=200),
@@ -57,11 +47,10 @@ async def geocode(
 ):
     bias = _round_bias(lat, lon)
     key = make_cache_key(q, bias)
-    now = time.time()
 
     cached = _CACHE.get(key)
-    if cached and now - cached[0] < _CACHE_TTL_S:
-        return cached[1]
+    if cached is not None:
+        return cached
 
     try:
         if bias is None:
@@ -75,5 +64,5 @@ async def geocode(
             headers={"Retry-After": "2"},
         ) from exc
 
-    _store(key, now, results)
+    _CACHE.set(key, results)
     return results

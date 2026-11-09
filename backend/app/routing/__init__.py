@@ -1,12 +1,17 @@
+import logging
 from functools import lru_cache
 
 from app.config import get_settings
 from app.routing.base import RoutingProvider
 from app.routing.mock import MockGeocoding, MockRouting
 from app.routing.nominatim import NominatimGeocoding
+from app.routing.ors import ORSRouting
 from app.routing.osrm import OSRMRouting
 from app.routing.photon import FallbackGeocoding, PhotonGeocoding
+from app.routing.wrappers import CachedRouting, FallbackRouting
 from app.schemas import GeocodeResult, LonLat, RouteResult, TravelMode
+
+log = logging.getLogger(__name__)
 
 
 class CompositeProvider(RoutingProvider):
@@ -46,6 +51,17 @@ def get_routing_provider() -> RoutingProvider:
                 "walking": settings.osrm_walking_base_url,
                 "cycling": settings.osrm_cycling_base_url,
             }
+        )
+        if settings.routing_provider == "ors":
+            if settings.ors_api_key:
+                # ORS first, OSRM when ORS errors or its free quota runs out (ADR 0005).
+                routing = FallbackRouting(
+                    ORSRouting(settings.ors_api_key, settings.ors_base_url), routing
+                )
+            else:
+                log.warning("ROUTING_PROVIDER=ors but ORS_API_KEY is empty; using OSRM only")
+        routing = CachedRouting(
+            routing, settings.route_cache_ttl_s, settings.route_cache_max_entries
         )
 
     if settings.geocoding_provider == "mock":
