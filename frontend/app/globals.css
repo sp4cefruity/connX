@@ -28,6 +28,9 @@ body {
   stroke: #191c2b;
   stroke-width: 1;
 }
+[data-theme="light"] .grid-line {
+  stroke: #dfe2ec;
+}
 
 .path-line {
   fill: none;
@@ -191,4 +194,10 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.15);
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28);
 }
