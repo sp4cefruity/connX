@@ -465,7 +465,7 @@ export default function MapView({
           [Math.min(...lons), Math.min(...lats)],
           [Math.max(...lons), Math.max(...lats)],
         ],
-        { padding: paddingFor(map, { top: 80, right: 80, bottom: 80, left: 80 }), duration: 800, maxZoom: 15 }
+        { padding: paddingFor(map, { top: 80, right: 80, bottom: isDesktopLayout() ? 300 : 80, left: 80 }), duration: 800, maxZoom: 15 }
       );
     }
   }

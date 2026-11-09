@@ -49,6 +49,8 @@ const MapView = dynamic(() => import("@/components/MapView"), {
 
 type Endpoint = { label: string; point: LonLat | null };
 
+const TRAVEL_MODES: TravelMode[] = ["driving", "walking", "cycling"];
+
 export default function PlannerPage() {
   const { theme, toggle: toggleTheme } = useTheme();
   const [primaryStart, setPrimaryStart] = useState<Endpoint>({ label: "", point: null });
@@ -68,7 +70,7 @@ export default function PlannerPage() {
     setMapCenter(point);
   }
 
-  const [mode] = useState<TravelMode>("driving");
+  const [mode, setMode] = useState<TravelMode>("driving");
   // How close Route B may come before it counts as too close; sets the width
   // of the red zone band. Not the overlap tolerance (that is fixed server-side).
   const [dangerDistance, setDangerDistance] = useState(DANGER_DISTANCE_DEFAULT_M);
@@ -159,6 +161,27 @@ export default function PlannerPage() {
           <div className="mb-3.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider">
             <span className="h-1.5 w-1.5 rounded-full bg-route-a shadow-[0_0_6px_rgb(var(--c-route-a))]" />
             Your route
+          </div>
+          <div role="radiogroup" aria-label="Travel mode" className="mb-4 grid grid-cols-3 gap-1 rounded-md border border-border p-1 font-mono text-[11px]">
+            {TRAVEL_MODES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={mode === m}
+                onClick={() => {
+                  if (m !== mode) {
+                    setMode(m);
+                    results.reset();
+                  }
+                }}
+                className={`rounded px-2 py-1.5 capitalize transition-colors ${
+                  mode === m ? "bg-accent text-on-accent" : "text-ink-dim hover:text-ink"
+                }`}
+              >
+                {m}
+              </button>
+            ))}
           </div>
           <LocationField
             label="Start"

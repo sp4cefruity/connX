@@ -9,7 +9,7 @@ asked to avoid*, which you created yourself). RouteComparison is still
 modelled here so Phase 2 "route history" (spec §44) has somewhere to go.
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -24,6 +24,11 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+
+def utcnow() -> datetime:
+    """Naive UTC now (columns are timezone-naive); avoids deprecated datetime.utcnow()."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 class User(Base):
     """
     Anonymous user. No email/password — see app/auth.py. Just an opaque
@@ -33,7 +38,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     saved_locations = relationship("SavedLocation", back_populates="user", cascade="all, delete-orphan")
 
@@ -54,7 +59,7 @@ class SavedLocation(Base):
     temporary = Column(Boolean, default=False)
     expires_at = Column(DateTime, nullable=True)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     user = relationship("User", back_populates="saved_locations")
 
@@ -78,4 +83,4 @@ class RouteComparison(Base):
     overlap_percentage = Column(Float)
     overlap_duration_s = Column(Float)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)

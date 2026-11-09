@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_or_create_user
 from app.database import get_db
-from app.models import SavedLocation, User
+from app.models import SavedLocation, User, utcnow
 from app.schemas import RedSpot, RedSpotCreate, RedSpotUpdate
 
 router = APIRouter(prefix="/api/red-spots", tags=["red-spots"])
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/red-spots", tags=["red-spots"])
 
 def get_active_red_spots(db: Session, user_id: str) -> list[SavedLocation]:
     """Red spots belonging to the user that haven't expired (spec §22 temporary red spots)."""
-    now = datetime.utcnow()
+    now = utcnow()
     return (
         db.query(SavedLocation)
         .filter(SavedLocation.user_id == user_id)
