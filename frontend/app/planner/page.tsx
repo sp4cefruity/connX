@@ -10,8 +10,10 @@ import LocationField from "@/components/LocationField";
 import EncounterPanel from "@/components/EncounterPanel";
 import RedSpotPanel from "@/components/RedSpotPanel";
 import ResultsPanel from "@/components/ResultsPanel";
+import ThemeToggle from "@/components/ThemeToggle";
 import { encounterZoomPoints, type ZoomTarget } from "@/lib/encounters";
 import { sheetSummary, type CardPlacement } from "@/lib/layout";
+import { useTheme } from "@/lib/useTheme";
 import { usePlannerResults } from "@/lib/usePlannerResults";
 import { useRedSpotEditor } from "@/lib/useRedSpotEditor";
 import {
@@ -48,6 +50,7 @@ const MapView = dynamic(() => import("@/components/MapView"), {
 type Endpoint = { label: string; point: LonLat | null };
 
 export default function PlannerPage() {
+  const { theme, toggle: toggleTheme } = useTheme();
   const [primaryStart, setPrimaryStart] = useState<Endpoint>({ label: "", point: null });
   const [primaryEnd, setPrimaryEnd] = useState<Endpoint>({ label: "", point: null });
   const [compareStart, setCompareStart] = useState<Endpoint>({ label: "", point: null });
@@ -298,6 +301,7 @@ export default function PlannerPage() {
           <span className="shrink-0 rounded-full border border-border bg-panel/70 px-2.5 py-1.5 font-mono text-[11px] capitalize text-ink-dim backdrop-blur-md">
             {mode}
           </span>
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
         </div>
 
         <MapView
@@ -315,6 +319,7 @@ export default function PlannerPage() {
           focus={spots.focus}
           onMapClick={spots.handleMapClick}
           picking={spots.picking}
+          theme={theme}
         />
 
         <div className="hidden md:block">{resultsCard("overlay")}</div>

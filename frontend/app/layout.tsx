@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { themeCss } from "@/lib/palette";
+import { themeInitScript } from "@/lib/theme";
 
 const display = Space_Grotesk({
   subsets: ["latin"],
@@ -29,10 +30,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${display.variable} ${body.variable} ${mono.variable}`}>
       <head>
         {/* Colour tokens for every theme (lib/palette.ts). */}
         <style dangerouslySetInnerHTML={{ __html: themeCss() }} />
+        {/* Sets data-theme from localStorage / the system before first paint (lib/theme.ts). */}
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript() }} />
       </head>
       <body className="font-body">{children}</body>
     </html>
