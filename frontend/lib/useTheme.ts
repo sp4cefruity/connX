@@ -16,8 +16,12 @@ function currentTheme(): ThemeName {
  * and to <html data-theme>; until the user chooses, the system preference is
  * followed live.
  */
-export function useTheme(): { theme: ThemeName; toggle: () => void } {
+export function useTheme(): { theme: ThemeName; ready: boolean; toggle: () => void } {
   const [theme, setTheme] = useState<ThemeName>(DEFAULT_THEME);
+  // False until the real theme has been read from <html>. Anything that is
+  // expensive to restyle (the map) should wait for this rather than start in
+  // the default theme and reload its style a moment later.
+  const [ready, setReady] = useState(false);
 
   const apply = useCallback((next: ThemeName) => {
     document.documentElement.setAttribute("data-theme", next);
@@ -28,6 +32,7 @@ export function useTheme(): { theme: ThemeName; toggle: () => void } {
   // Read after mount (not in the initial state) so server and client markup agree.
   useEffect(() => {
     setTheme(currentTheme());
+    setReady(true);
     const query = window.matchMedia("(prefers-color-scheme: light)");
     const onChange = () => {
       let stored: string | null = null;
@@ -52,5 +57,5 @@ export function useTheme(): { theme: ThemeName; toggle: () => void } {
     apply(next);
   }, [apply]);
 
-  return { theme, toggle };
+  return { theme, ready, toggle };
 }

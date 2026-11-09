@@ -8,7 +8,7 @@ import pytest
 from app.cache import TTLCache
 from app.config import Settings
 from app.routing import get_routing_provider
-from app.routing.base import RoutingProviderError
+from app.routing.base import RoutingProviderError, RoutingQuotaError
 from app.routing.ors import ORSRouting
 from app.routing.osrm import OSRMRouting
 from app.routing.wrappers import CachedRouting, FallbackRouting
@@ -102,11 +102,43 @@ def test_ors_retries_without_alternatives_when_request_is_refused():
         body = json.loads(request.content)
         bodies.append(body)
         if "alternative_routes" in body:
-            return httpx.Response(400, json={"error": "too long for alternatives"})
+            return httpx.Response(
+                400, json={"error": {"code": 2004, "message": "too long for alternatives"}}
+            )
         return httpx.Response(200, json={"features": [_feature(150000)]})
 
     routes = run(_ors(handler).get_alternative_routes(START, END, "driving", count=3))
     assert len(bodies) == 2 and len(routes) == 1
+
+
+def test_ors_other_400_does_not_retry():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(400, json={"error": {"code": 2010, "message": "point not routable"}})
+
+    with pytest.raises(RoutingProviderError):
+        run(_ors(handler).get_alternative_routes(START, END, "driving", count=3))
+    assert len(calls) == 1
+
+
+def test_ors_400_with_unparseable_body_does_not_retry():
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(400, text="nope")
+
+    with pytest.raises(RoutingProviderError):
+        run(_ors(handler).get_alternative_routes(START, END, "driving", count=3))
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("status", [401, 403, 429])
+def test_ors_quota_statuses_raise_quota_error(status):
+    with pytest.raises(RoutingQuotaError):
+        run(_ors(lambda r: httpx.Response(status)).get_route(START, END, "driving"))
 
 
 @pytest.mark.parametrize("status", [403, 429, 500])
@@ -195,6 +227,101 @@ def test_failures_are_not_cached():
     assert inner.calls == 2
 
 
+def test_fallback_skips_primary_during_cooldown_after_quota_error():
+    now = [0.0]
+
+    class Quota(FakeRouting):
+        async def get_route(self, start, end, mode):
+            self.calls += 1
+            raise RoutingQuotaError("429")
+
+    primary, fallback = Quota(), FakeRouting(km=9)
+    routing = FallbackRouting(primary, fallback, cooldown_s=60, clock=lambda: now[0])
+    for _ in range(3):
+        assert run(routing.get_route(START, END, "driving")).distance_km == 9
+    assert primary.calls == 1
+    now[0] = 61
+    run(routing.get_route(START, END, "driving"))
+    assert primary.calls == 2
+
+
+def test_fallback_opens_breaker_after_repeated_failures_and_success_resets():
+    now = [0.0]
+    primary, fallback = FakeRouting(fail=True), FakeRouting(km=9)
+    routing = FallbackRouting(primary, fallback, cooldown_s=60, failure_threshold=3, clock=lambda: now[0])
+    for _ in range(5):
+        run(routing.get_route(START, END, "driving"))
+    assert primary.calls == 3
+
+    now[0] = 100
+    primary.fail = False
+    run(routing.get_route(START, END, "driving"))  # success resets the count
+    primary.fail = True
+    for _ in range(2):
+        run(routing.get_route(START, END, "driving"))
+    assert primary.calls == 6  # breaker not open yet (2 < 3)
+
+
+def test_cache_returns_copies():
+    routing = CachedRouting(FakeRouting())
+    first = run(routing.get_route(START, END, "driving"))
+    first.geometry.append(START)
+    first.distance_km = 999
+    second = run(routing.get_route(START, END, "driving"))
+    assert second.distance_km == 1.0 and len(second.geometry) == 2
+
+    alts = run(routing.get_alternative_routes(START, END, "driving", 2))
+    alts.pop()
+    alts[0].distance_km = 999
+    again = run(routing.get_alternative_routes(START, END, "driving", 2))
+    assert len(again) == 2 and again[0].distance_km == 1.0
+
+
+def test_single_route_shared_between_get_route_and_alternatives_count_1():
+    inner = FakeRouting()
+    routing = CachedRouting(inner)
+    run(routing.get_route(START, END, "driving"))
+    alts = run(routing.get_alternative_routes(START, END, "driving", 1))
+    assert len(alts) == 1 and inner.calls == 1
+
+
+def test_concurrent_identical_requests_share_one_upstream_call():
+    class Slow(FakeRouting):
+        async def get_route(self, start, end, mode):
+            self.calls += 1
+            await asyncio.sleep(0.01)
+            return _route()
+
+    inner = Slow()
+    routing = CachedRouting(inner)
+
+    async def go():
+        return await asyncio.gather(
+            routing.get_route(START, END, "driving"),
+            routing.get_alternative_routes(START, END, "driving", 1),
+            routing.get_route(START, END, "driving"),
+        )
+
+    results = run(go())
+    assert inner.calls == 1 and len(results) == 3
+
+
+def test_failed_in_flight_request_is_not_cached_and_can_retry():
+    inner = FakeRouting(fail=True)
+    routing = CachedRouting(inner)
+
+    async def go():
+        return await asyncio.gather(
+            routing.get_route(START, END, "driving"),
+            routing.get_route(START, END, "driving"),
+            return_exceptions=True,
+        )
+
+    assert all(isinstance(r, RoutingProviderError) for r in run(go()))
+    inner.fail = False
+    assert run(routing.get_route(START, END, "driving")).distance_km == 1.0
+
+
 # ---------- factory ----------
 
 
@@ -212,13 +339,17 @@ def _provider_for(monkeypatch, **overrides):
 
 def test_factory_ors_with_key_is_cached_ors_over_osrm(monkeypatch):
     provider = _provider_for(monkeypatch, routing_provider="ors", ors_api_key="k")
-    assert isinstance(provider._routing, CachedRouting)
-    fallback = provider._routing._inner
-    assert isinstance(fallback, FallbackRouting)
-    assert isinstance(fallback._primary, ORSRouting)
-    assert isinstance(fallback._fallback, OSRMRouting)
+    # Each provider is cached on its own; the fallback chain itself is not,
+    # so degraded OSRM answers can't outlive an ORS recovery.
+    chain = provider._routing
+    assert isinstance(chain, FallbackRouting)
+    assert isinstance(chain._primary, CachedRouting)
+    assert isinstance(chain._primary._inner, ORSRouting)
+    assert isinstance(chain._fallback, CachedRouting)
+    assert isinstance(chain._fallback._inner, OSRMRouting)
 
 
 def test_factory_ors_without_key_degrades_to_osrm(monkeypatch):
     provider = _provider_for(monkeypatch, routing_provider="ors", ors_api_key="")
+    assert isinstance(provider._routing, CachedRouting)
     assert isinstance(provider._routing._inner, OSRMRouting)

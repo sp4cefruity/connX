@@ -7,12 +7,12 @@ the Authorization header. Free-tier directions quota is 2,000/day and 40/min
 cache and a fallback to OSRM (ADR 0005).
 
 Alternative routes are capped by ORS at 3 routes and ~100 km. When the
-request is refused for being too long, we retry for the single best route
+request is refused for being too long (error 2004), we retry for the single best route
 rather than failing the whole search.
 """
 import httpx
 
-from app.routing.base import RoutingProviderError
+from app.routing.base import RoutingProviderError, RoutingQuotaError
 from app.schemas import LonLat, RouteResult, TravelMode
 
 _PROFILES: dict[str, str] = {
@@ -21,6 +21,27 @@ _PROFILES: dict[str, str] = {
     "cycling": "cycling-regular",
 }
 _MAX_ALTERNATIVES = 3  # public ORS cap
+# ORS error code for "alternative routes: distance/waypoint limit exceeded".
+_ALTERNATIVES_LIMIT_CODE = 2004
+_QUOTA_STATUSES = {401, 403, 429}
+
+
+def _error_code(resp: httpx.Response) -> int | None:
+    """The ORS error code from an error body, if there is one.
+
+    ORS answers {"error": {"code": 2004, "message": ...}} (older versions put
+    the bare code in "error" or "code").
+    """
+    try:
+        data = resp.json()
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    err = data.get("error", data)
+    if isinstance(err, dict):
+        err = err.get("code")
+    return err if isinstance(err, int) and not isinstance(err, bool) else None
 
 
 class ORSRouting:
@@ -28,7 +49,7 @@ class ORSRouting:
         self,
         api_key: str,
         base_url: str = "https://api.openrouteservice.org",
-        timeout_s: float = 15.0,
+        timeout_s: float = 8.0,
         transport: httpx.AsyncBaseTransport | None = None,
     ):
         self.api_key = api_key
@@ -58,10 +79,16 @@ class ORSRouting:
             }
 
         resp = await self._post(profile, body)
-        if resp.status_code == 400 and count > 1:
-            # Over the alternatives distance cap (or no alternatives exist).
+        if (
+            resp.status_code == 400
+            and count > 1
+            and _error_code(resp) == _ALTERNATIVES_LIMIT_CODE
+        ):
+            # Over the alternatives distance cap: take the single best route.
             resp = await self._post(profile, {"coordinates": body["coordinates"]})
 
+        if resp.status_code in _QUOTA_STATUSES:
+            raise RoutingQuotaError(f"ORS refused the request (HTTP {resp.status_code})")
         if resp.status_code != 200:
             raise RoutingProviderError(f"ORS returned HTTP {resp.status_code}")
 

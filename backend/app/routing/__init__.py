@@ -52,17 +52,22 @@ def get_routing_provider() -> RoutingProvider:
                 "cycling": settings.osrm_cycling_base_url,
             }
         )
-        if settings.routing_provider == "ors":
-            if settings.ors_api_key:
-                # ORS first, OSRM when ORS errors or its free quota runs out (ADR 0005).
-                routing = FallbackRouting(
-                    ORSRouting(settings.ors_api_key, settings.ors_base_url), routing
-                )
-            else:
-                log.warning("ROUTING_PROVIDER=ors but ORS_API_KEY is empty; using OSRM only")
+        # Cache each provider separately: a cache above the fallback chain would
+        # keep serving degraded OSRM answers after ORS recovers (ADR 0005).
         routing = CachedRouting(
             routing, settings.route_cache_ttl_s, settings.route_cache_max_entries
         )
+        if settings.routing_provider == "ors":
+            if settings.ors_api_key:
+                # ORS first, OSRM when ORS errors or its free quota runs out (ADR 0005).
+                ors = CachedRouting(
+                    ORSRouting(settings.ors_api_key, settings.ors_base_url),
+                    settings.route_cache_ttl_s,
+                    settings.route_cache_max_entries,
+                )
+                routing = FallbackRouting(ors, routing)
+            else:
+                log.warning("ROUTING_PROVIDER=ors but ORS_API_KEY is empty; using OSRM only")
 
     if settings.geocoding_provider == "mock":
         geocoding = MockGeocoding()

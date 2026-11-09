@@ -24,10 +24,10 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
-
 def utcnow() -> datetime:
     """Naive UTC now (columns are timezone-naive); avoids deprecated datetime.utcnow()."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 class User(Base):
     """
