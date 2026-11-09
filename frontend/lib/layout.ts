@@ -12,6 +12,9 @@ export function isDesktopLayout(): boolean {
   return typeof window !== "undefined" && window.matchMedia(DESKTOP_MEDIA_QUERY).matches;
 }
 
+/** "overlay": a card floating over the bottom of the map (desktop). "inline": in the bottom sheet (phones). */
+export type CardPlacement = "overlay" | "inline";
+
 export interface Padding {
   top: number;
   right: number;

@@ -74,6 +74,8 @@ export interface RedSpotHit {
 export interface RouteScoreBreakdown {
   time_penalty: number;
   overlap_penalty: number;
+  /** Close passes with Route B, weighted by how close each one gets. */
+  encounter_penalty: number;
   red_zone_penalty: number;
   distance_penalty: number;
   total: number;
@@ -88,6 +90,9 @@ export interface ScoredRoute {
   score: RouteScoreBreakdown;
   explanation: string[];
 }
+
+/** What the map and side panel need about one Route A, compared or recommended. */
+export type RouteView = Pick<ScoredRoute, "route" | "overlap" | "encounters" | "red_spot_hits">;
 
 /** GeoJSON Polygon / MultiPolygon geometry, coordinates in [lon, lat]. */
 export type RedZoneBand =
