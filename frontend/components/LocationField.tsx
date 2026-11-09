@@ -222,10 +222,15 @@ export default function LocationField({
             data.name ||
             data.display_name?.split(",").slice(0, 2).join(",") ||
             "Current location";
+          lastPickedRef.current = label;
           onChange(label);
         } catch {
+          lastPickedRef.current = "Current location";
           onChange("Current location");
         }
+        setNoMatches(false);
+        setOpen(false);
+        setResults([]);
         onUseLocation(loc);
         setGeoLoading(false);
       },
