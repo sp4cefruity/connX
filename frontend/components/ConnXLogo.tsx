@@ -17,18 +17,18 @@ export default function ConnXLogo({ className = "", size = 32 }: ConnXLogoProps)
       {/* Two crossing route paths forming the X */}
       <path
         d="M6 12 L16 28"
-        stroke="#5EE6C4"
+        className="stroke-route-a"
         strokeWidth="2.4"
         strokeLinecap="round"
       />
       <path
         d="M6 28 L16 12"
-        stroke="#B98CFF"
+        className="stroke-route-b"
         strokeWidth="2.4"
         strokeLinecap="round"
       />
       {/* Small glow dot at intersection */}
-      <circle cx="11" cy="20" r="2" fill="#5EE6C4" opacity="0.5" />
+      <circle cx="11" cy="20" r="2" className="fill-route-a" opacity="0.5" />
 
       {/* "conn" text */}
       <text
@@ -37,7 +37,7 @@ export default function ConnXLogo({ className = "", size = 32 }: ConnXLogoProps)
         fontFamily="var(--font-display), 'Space Grotesk', sans-serif"
         fontWeight="700"
         fontSize="18"
-        fill="#ECEEF5"
+        className="fill-ink"
         letterSpacing="-0.5"
       >
         conn
@@ -50,7 +50,7 @@ export default function ConnXLogo({ className = "", size = 32 }: ConnXLogoProps)
         fontFamily="var(--font-display), 'Space Grotesk', sans-serif"
         fontWeight="700"
         fontSize="18"
-        fill="#5EE6C4"
+        className="fill-accent"
         letterSpacing="-0.5"
       >
         X
