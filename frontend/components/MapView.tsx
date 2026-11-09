@@ -12,6 +12,7 @@ import {
 } from "@/lib/redSpotMap";
 import { circleRing } from "@/lib/redSpots";
 import { formatGap, type ZoomTarget } from "@/lib/encounters";
+import { fitPadding, isDesktopLayout, type Padding } from "@/lib/layout";
 import type { Encounter, LonLat, OverlapSegment, RedSpot, RedZoneBand, RouteResult } from "@/lib/types";
 
 // OpenFreeMap vector basemap (no API key). Configurable so the provider or
@@ -362,6 +363,12 @@ interface MapViewProps {
   picking?: boolean;
 }
 
+// Fit padding that still fits the map's current size (a phone's map is short).
+function paddingFor(map: maplibregl.Map, desired: Padding) {
+  const el = map.getContainer();
+  return fitPadding(el.clientWidth, el.clientHeight, desired);
+}
+
 export default function MapView({
   primaryRoute,
   comparisonRoute,
@@ -497,7 +504,7 @@ export default function MapView({
           [Math.min(...lons), Math.min(...lats)],
           [Math.max(...lons), Math.max(...lats)],
         ],
-        { padding: 80, duration: 800, maxZoom: 15 }
+        { padding: paddingFor(map, { top: 80, right: 80, bottom: 80, left: 80 }), duration: 800, maxZoom: 15 }
       );
     }
   }
@@ -550,8 +557,9 @@ export default function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.key]);
 
-  // Zoom to a clicked encounter. The bottom padding clears the results panel
-  // that overlays the lower part of the map.
+  // Zoom to a clicked encounter. On desktop the bottom padding clears the
+  // results panel that overlays the lower part of the map; on phones the
+  // results are in the bottom sheet instead.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !zoomTo || zoomTo.points.length === 0) return;
@@ -562,7 +570,11 @@ export default function MapView({
         [Math.min(...lons), Math.min(...lats)],
         [Math.max(...lons), Math.max(...lats)],
       ],
-      { padding: { top: 90, left: 90, right: 90, bottom: 260 }, maxZoom: 17, duration: 700 }
+      {
+        padding: paddingFor(map, { top: 90, left: 90, right: 90, bottom: isDesktopLayout() ? 260 : 90 }),
+        maxZoom: 17,
+        duration: 700,
+      }
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoomTo?.key]);

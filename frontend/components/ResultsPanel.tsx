@@ -1,20 +1,27 @@
 "use client";
 
 import RouteFlags from "@/components/RouteFlags";
+import type { CardPlacement } from "@/lib/layout";
 import type { ScoredRoute } from "@/lib/types";
 
 interface ResultsPanelProps {
   routes: ScoredRoute[];
   selectedIndex: number;
   onSelect: (index: number) => void;
+  placement?: CardPlacement;
 }
 
+const PLACEMENT_CLASS: Record<CardPlacement, string> = {
+  overlay: "absolute inset-x-4 bottom-4 z-10 rounded-xl border border-border bg-panel/85 p-4 backdrop-blur-md sm:inset-x-5 sm:p-5",
+  inline: "",
+};
+
 /** The ranked alternatives for Route A: the secondary Recommendation view. */
-export default function ResultsPanel({ routes, selectedIndex, onSelect }: ResultsPanelProps) {
+export default function ResultsPanel({ routes, selectedIndex, onSelect, placement = "overlay" }: ResultsPanelProps) {
   if (routes.length === 0) return null;
 
   return (
-    <section className="absolute inset-x-4 bottom-4 z-10 rounded-xl border border-border bg-panel/85 p-4 backdrop-blur-md sm:inset-x-5 sm:p-5">
+    <section className={PLACEMENT_CLASS[placement]}>
       <div className="mb-3.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h3 className="font-display text-sm font-semibold">Recommendation</h3>
         <span className="font-mono text-[11px] text-ink-dim">

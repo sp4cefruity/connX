@@ -3,6 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
+import BottomSheet from "@/components/BottomSheet";
 import ComparisonSummary from "@/components/ComparisonSummary";
 import ConnXLogo from "@/components/ConnXLogo";
 import LocationField from "@/components/LocationField";
@@ -10,6 +11,7 @@ import EncounterPanel from "@/components/EncounterPanel";
 import RedSpotPanel from "@/components/RedSpotPanel";
 import ResultsPanel from "@/components/ResultsPanel";
 import { encounterZoomPoints, type ZoomTarget } from "@/lib/encounters";
+import { sheetSummary, type CardPlacement } from "@/lib/layout";
 import { usePlannerResults } from "@/lib/usePlannerResults";
 import { useRedSpotEditor } from "@/lib/useRedSpotEditor";
 import {
@@ -73,6 +75,8 @@ export default function PlannerPage() {
   const spots = useRedSpotEditor();
 
   const [zoomTarget, setZoomTarget] = useState<ZoomTarget | null>(null);
+  // Small screens only: whether the bottom sheet is open (starts open for input).
+  const [sheetExpanded, setSheetExpanded] = useState(true);
 
   // Compare (primary) and Recommend (secondary), plus the danger-distance
   // slider refresh of whichever ran last.
@@ -112,9 +116,35 @@ export default function PlannerPage() {
     [spots.redSpots, spots.draft?.id]
   );
 
+  // The results card is rendered twice: floating over the map on desktop, and
+  // inside the sheet on phones (CSS shows one and hides the other).
+  function resultsCard(placement: CardPlacement) {
+    if (results.view === "recommend") {
+      return (
+        <ResultsPanel
+          routes={results.ranking.routes}
+          selectedIndex={results.ranking.selectedIndex}
+          onSelect={results.selectIndex}
+          placement={placement}
+        />
+      );
+    }
+    return results.comparison ? <ComparisonSummary view={results.comparison} placement={placement} /> : null;
+  }
+  const hasResults = results.view === "recommend" ? results.ranking.routes.length > 0 : !!results.comparison;
+
+  // Phones: map on top, bottom sheet below. Desktop (md+): side panel and map.
   return (
-    <div className="grid h-screen grid-cols-1 md:grid-cols-[360px_1fr]">
-      <aside className="flex flex-col overflow-y-auto border-r border-border bg-panel">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#08080F] supports-[height:100dvh]:h-[100dvh] md:grid md:grid-cols-[360px_1fr] md:grid-rows-[minmax(0,1fr)]">
+      <BottomSheet
+        expanded={sheetExpanded}
+        onExpandedChange={setSheetExpanded}
+        summary={sheetSummary({
+          routeCount: results.view === "recommend" ? results.ranking.routes.length : results.comparison ? 1 : 0,
+          overlapKm: selected ? selected.overlap.distance_km : null,
+          encounterCount: selected && comparisonRoute ? selected.encounters.length : null,
+        })}
+      >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <ConnXLogo size={18} />
           <Link href="/" className="font-mono text-[11px] text-ink-dim hover:text-ink transition-colors">
@@ -224,6 +254,8 @@ export default function PlannerPage() {
           )}
         </div>
 
+        {hasResults && <div className="border-b border-border px-5 py-5 md:hidden">{resultsCard("inline")}</div>}
+
         {/* Only meaningful once a comparison against their route has run. */}
         {selected && comparisonRoute && (
           <div className="border-b border-border px-5 py-5">
@@ -255,9 +287,9 @@ export default function PlannerPage() {
             onCancel={spots.cancel}
           />
         </div>
-      </aside>
+      </BottomSheet>
 
-      <main className="relative bg-[#08080F]">
+      <main className="relative min-h-0 flex-1 bg-[#08080F]">
         {/* Left-aligned and capped in width so it never runs under the zoom buttons (top-right). */}
         <div className="pointer-events-none absolute left-4 right-16 top-4 z-10 flex items-center gap-2 sm:left-5">
           <span className="truncate rounded-full border border-border bg-panel/70 px-2.5 py-1.5 font-mono text-[11px] text-ink-dim backdrop-blur-md">
@@ -285,15 +317,7 @@ export default function PlannerPage() {
           picking={spots.picking}
         />
 
-        {results.view === "recommend" ? (
-          <ResultsPanel
-            routes={results.ranking.routes}
-            selectedIndex={results.ranking.selectedIndex}
-            onSelect={results.selectIndex}
-          />
-        ) : (
-          results.comparison && <ComparisonSummary view={results.comparison} />
-        )}
+        <div className="hidden md:block">{resultsCard("overlay")}</div>
       </main>
     </div>
   );
