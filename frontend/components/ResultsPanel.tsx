@@ -8,7 +8,14 @@ interface ResultsPanelProps {
   onSelect: (index: number) => void;
   overlapSummary?: { distanceKm: number; percentage: number } | null;
   redSpotCount?: number;
+  /** "overlay" floats over the bottom of the map (desktop); "inline" sits in the bottom sheet (phones). */
+  placement?: "overlay" | "inline";
 }
+
+const PLACEMENT_CLASS = {
+  overlay: "absolute inset-x-4 bottom-4 z-10 rounded-xl border border-border bg-panel/85 p-4 backdrop-blur-md sm:inset-x-5 sm:p-5",
+  inline: "",
+};
 
 function FlagLine({ tone, children }: { tone: "good" | "warn" | "bad"; children: React.ReactNode }) {
   const dot = { good: "bg-route-a", warn: "bg-[#F5C24B]", bad: "bg-ember" }[tone];
@@ -26,12 +33,13 @@ export default function ResultsPanel({
   onSelect,
   overlapSummary,
   redSpotCount,
+  placement = "overlay",
 }: ResultsPanelProps) {
   if (routes.length === 0) return null;
 
   return (
-    <section className="absolute inset-x-4 bottom-4 z-10 rounded-xl border border-border bg-panel/85 p-4 backdrop-blur-md sm:inset-x-5 sm:p-5">
-      <div className="mb-3.5 flex items-center justify-between">
+    <section className={PLACEMENT_CLASS[placement]}>
+      <div className="mb-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <h3 className="font-display text-sm font-semibold">{routes.length} routes compared</h3>
         {overlapSummary && (
           <span className="font-mono text-[11.5px] text-ember">

@@ -99,7 +99,7 @@ export default function RedSpotPanel({
                   <span className="font-mono text-[10.5px] text-ink-dim">{formatRadius(spot.radius_m)}</span>
                   <button
                     onClick={() => onDelete(spot.id)}
-                    className="text-[11px] text-ink-dim hover:text-ember"
+                    className="-m-2 p-2 text-[11px] text-ink-dim hover:text-ember"
                     aria-label={`Delete ${spot.name}`}
                   >
                     ✕

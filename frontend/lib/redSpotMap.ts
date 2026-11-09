@@ -1,5 +1,5 @@
 import type maplibregl from "maplibre-gl";
-import type { MapLayerMouseEvent, MapLayerTouchEvent } from "maplibre-gl";
+import type { MapLayerMouseEvent } from "maplibre-gl";
 import { circleRing, metersBetween, offsetEast } from "./redSpots";
 import type { LonLat } from "./types";
 
@@ -57,6 +57,30 @@ export function editorFeatureCollections(editor: EditorGeometry | null) {
   };
 }
 
+type HandleKind = "center" | "radius";
+
+// A finger is far less precise than a mouse pointer, and the drawn handles are
+// only ~24 px across, so touches grab a handle within this many pixels of it.
+export const TOUCH_HANDLE_HIT_PX = 24;
+
+/** The handle nearest `point` within `maxPx`, given the handles' screen positions. */
+export function nearestHandle(
+  point: { x: number; y: number },
+  handles: { kind: HandleKind; x: number; y: number }[],
+  maxPx: number
+): HandleKind | null {
+  let best: HandleKind | null = null;
+  let bestDist = maxPx;
+  for (const h of handles) {
+    const d = Math.hypot(h.x - point.x, h.y - point.y);
+    if (d <= bestDist) {
+      best = h.kind;
+      bestDist = d;
+    }
+  }
+  return best;
+}
+
 export interface RedSpotMapCallbacks {
   /** Latest geometry of the spot being edited, or null. Read on every drag event. */
   getEditor: () => EditorGeometry | null;
@@ -76,7 +100,7 @@ export interface RedSpotMapCallbacks {
  */
 export function attachRedSpotInteractions(map: maplibregl.Map, cb: RedSpotMapCallbacks) {
   const canvas = map.getCanvas();
-  let dragging: "center" | "radius" | null = null;
+  let dragging: HandleKind | null = null;
 
   const onMove = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
     const editor = cb.getEditor();
@@ -98,10 +122,7 @@ export function attachRedSpotInteractions(map: maplibregl.Map, cb: RedSpotMapCal
     canvas.style.cursor = "";
   };
 
-  const start = (e: MapLayerMouseEvent | MapLayerTouchEvent) => {
-    const kind = e.features?.[0]?.properties?.kind;
-    if (kind !== "center" && kind !== "radius") return;
-    if ("points" in e && e.points.length !== 1) return;
+  const begin = (kind: HandleKind, e: MapLayerMouseEvent | maplibregl.MapTouchEvent) => {
     // Stops the map from also treating this gesture as a pan.
     e.preventDefault();
     dragging = kind;
@@ -113,8 +134,28 @@ export function attachRedSpotInteractions(map: maplibregl.Map, cb: RedSpotMapCal
     map.once("touchend", stop);
   };
 
-  map.on("mousedown", EDITOR_HANDLE_LAYER, start);
-  map.on("touchstart", EDITOR_HANDLE_LAYER, start);
+  map.on("mousedown", EDITOR_HANDLE_LAYER, (e) => {
+    const kind = e.features?.[0]?.properties?.kind;
+    if (kind === "center" || kind === "radius") begin(kind, e);
+  });
+  // Touch: hit-test against the handles' screen positions with a finger-sized
+  // radius instead of the exact rendered circles.
+  map.on("touchstart", (e) => {
+    const editor = cb.getEditor();
+    if (!editor || e.points.length !== 1) return;
+    const center = map.project([editor.lon, editor.lat]);
+    const edgeLonLat = offsetEast({ lon: editor.lon, lat: editor.lat }, editor.radius_m);
+    const edge = map.project([edgeLonLat.lon, edgeLonLat.lat]);
+    const kind = nearestHandle(
+      e.point,
+      [
+        { kind: "center", x: center.x, y: center.y },
+        { kind: "radius", x: edge.x, y: edge.y },
+      ],
+      TOUCH_HANDLE_HIT_PX
+    );
+    if (kind) begin(kind, e);
+  });
   map.on("mouseenter", EDITOR_HANDLE_LAYER, () => {
     if (!dragging) canvas.style.cursor = "grab";
   });

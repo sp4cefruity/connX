@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { geocode, isSearchSlowError } from "@/lib/api";
+import { dropdownPlacement, type DropdownPlacement } from "@/lib/layout";
 import type { GeocodeResult, LonLat } from "@/lib/types";
 
 // Type-ahead debounce. Photon is fast enough that a short wait feels instant.
@@ -22,12 +23,6 @@ interface LocationFieldProps {
   onUseLocation?: (loc: LonLat) => void;
 }
 
-interface DropdownRect {
-  top: number;
-  left: number;
-  width: number;
-}
-
 export default function LocationField({
   label,
   bias,
@@ -44,12 +39,13 @@ export default function LocationField({
   const [loading, setLoading] = useState(false);
   const [slow, setSlow] = useState(false);
   const [geoLoading, setGeoLoading] = useState(false);
-  const [rect, setRect] = useState<DropdownRect | null>(null);
+  const [rect, setRect] = useState<DropdownPlacement | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const abortRef = useRef<AbortController | null>(null);
   const fieldRef = useRef<HTMLDivElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   // Label written into the input by the last selection. While value matches
@@ -174,21 +170,32 @@ export default function LocationField({
   // positioned child of the field) means the list is painted in a portal at
   // <body> level, so no ancestor's `overflow` or stacking context can ever
   // clip it — this is what was silently swallowing the suggestions before.
+  // It opens above the input when there is more room there (an input low in
+  // the phone bottom sheet, or above the on-screen keyboard).
   const updateRect = useCallback(() => {
-    const el = fieldRef.current;
+    const el = boxRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setRect({ top: r.bottom + 4, left: r.left, width: r.width });
+    const vv = window.visualViewport;
+    const view = vv
+      ? { top: vv.offsetTop, bottom: vv.offsetTop + vv.height }
+      : { top: 0, bottom: window.innerHeight };
+    setRect(dropdownPlacement(r, view));
   }, []);
 
   useLayoutEffect(() => {
     if (!open) return;
     updateRect();
+    const vv = window.visualViewport;
     window.addEventListener("scroll", updateRect, true);
     window.addEventListener("resize", updateRect);
+    vv?.addEventListener("resize", updateRect);
+    vv?.addEventListener("scroll", updateRect);
     return () => {
       window.removeEventListener("scroll", updateRect, true);
       window.removeEventListener("resize", updateRect);
+      vv?.removeEventListener("resize", updateRect);
+      vv?.removeEventListener("scroll", updateRect);
     };
   }, [open, updateRect]);
 
@@ -230,7 +237,7 @@ export default function LocationField({
   return (
     <div className="relative mb-2.5" ref={fieldRef}>
       <label className="mb-1.5 block text-[11px] text-ink-dim">{label}</label>
-      <div className="flex items-center gap-2 rounded-md border border-border bg-panel-2 px-3 py-2.5 focus-within:border-route-a/40 transition-colors">
+      <div ref={boxRef} className="flex items-center gap-2 rounded-md border border-border bg-panel-2 px-3 py-2.5 focus-within:border-route-a/40 transition-colors">
         <input
           ref={inputRef}
           type="text"
@@ -300,8 +307,15 @@ export default function LocationField({
             ref={listRef}
             id={listId}
             role="listbox"
-            style={{ position: "fixed", top: rect.top, left: rect.left, width: rect.width }}
-            className="z-[999] max-h-52 overflow-y-auto rounded-md border border-border bg-panel-2 shadow-2xl"
+            style={{
+              position: "fixed",
+              top: rect.y,
+              left: rect.left,
+              width: rect.width,
+              maxHeight: rect.maxHeight,
+              transform: rect.side === "above" ? "translateY(-100%)" : undefined,
+            }}
+            className="z-[999] overflow-y-auto rounded-md border border-border bg-panel-2 shadow-2xl"
           >
             {results.map((r, i) => (
               <li key={`${r.label}-${r.lon}-${r.lat}`} role="option" aria-selected={i === activeIdx} id={`${listId}-opt-${i}`} data-idx={i}>
