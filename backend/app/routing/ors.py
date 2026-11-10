@@ -67,17 +67,32 @@ class ORSRouting:
         routes = await self._routes([start, via, end], mode, count=1)
         return routes[0]
 
+    async def get_route_avoiding(
+        self, start: LonLat, end: LonLat, mode: TravelMode, avoid: dict
+    ) -> RouteResult:
+        """The best route that keeps out of `avoid`, a GeoJSON (Multi)Polygon.
+
+        The public API caps avoid areas at 200 km2 and 20 km across, and
+        routes using them at 150 km; breaking a cap is an ordinary error.
+        """
+        routes = await self._routes([start, end], mode, count=1, avoid=avoid)
+        return routes[0]
+
     async def get_alternative_routes(
         self, start: LonLat, end: LonLat, mode: TravelMode, count: int = 3
     ) -> list[RouteResult]:
         return await self._routes([start, end], mode, count)
 
-    async def _routes(self, points: list[LonLat], mode: TravelMode, count: int) -> list[RouteResult]:
+    async def _routes(
+        self, points: list[LonLat], mode: TravelMode, count: int, avoid: dict | None = None
+    ) -> list[RouteResult]:
         profile = _PROFILES.get(mode)
         if profile is None:
             raise RoutingProviderError(f"ORS has no profile for mode '{mode}'")
 
         body: dict = {"coordinates": [[p.lon, p.lat] for p in points]}
+        if avoid is not None:
+            body["options"] = {"avoid_polygons": avoid}
         if count > 1:
             body["alternative_routes"] = {
                 "target_count": min(count, _MAX_ALTERNATIVES),

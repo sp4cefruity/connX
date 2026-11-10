@@ -27,6 +27,11 @@ class CompositeProvider(RoutingProvider):
     async def get_route_via(self, start: LonLat, via: LonLat, end: LonLat, mode: TravelMode) -> RouteResult:
         return await self._routing.get_route_via(start, via, end, mode)
 
+    async def get_route_avoiding(
+        self, start: LonLat, end: LonLat, mode: TravelMode, avoid: dict
+    ) -> RouteResult:
+        return await self._routing.get_route_avoiding(start, end, mode, avoid)
+
     async def get_alternative_routes(
         self, start: LonLat, end: LonLat, mode: TravelMode, count: int = 3
     ) -> list[RouteResult]:

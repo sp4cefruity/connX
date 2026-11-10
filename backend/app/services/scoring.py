@@ -55,6 +55,19 @@ def _encounter_penalty(encounters: list[Encounter], danger_distance_m: float) ->
     return round(penalty, 2)
 
 
+def _overlap_percent(inp: ScoringInputs) -> float:
+    """Shared road as a percentage of the *shortest* candidate, not of this route.
+
+    Measured against the route's own length, extra distance dilutes the
+    percentage: a 30 km detour sharing the same 14 km with Route B would look
+    better than the 27 km original. Measured against one fixed length, sharing
+    more road always costs more, and sharing the same road costs the same.
+    """
+    if inp.shortest_distance_km <= 0:
+        return inp.overlap.percentage
+    return inp.overlap.distance_km / inp.shortest_distance_km * 100
+
+
 def score_route(inp: ScoringInputs) -> RouteScoreBreakdown:
     time_penalty = round((inp.route.duration_min - inp.fastest_duration_min) * W_TIME_PER_MIN, 2)
     time_penalty = max(time_penalty, 0.0)
@@ -64,7 +77,7 @@ def score_route(inp: ScoringInputs) -> RouteScoreBreakdown:
 
     overlap_penalty = 0.0
     if inp.avoid_overlap:
-        overlap_penalty = round(inp.overlap.percentage * W_OVERLAP_PER_PERCENT, 2)
+        overlap_penalty = round(_overlap_percent(inp) * W_OVERLAP_PER_PERCENT, 2)
 
     # Close passes are part of avoiding Route B, so the same toggle covers them.
     encounter_penalty = 0.0

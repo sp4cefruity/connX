@@ -34,6 +34,15 @@ class RoutingProvider(ABC):
         ...
 
     @abstractmethod
+    async def get_route_avoiding(
+        self, start: LonLat, end: LonLat, mode: TravelMode, avoid: dict
+    ) -> RouteResult:
+        """The best route that keeps out of `avoid`, a GeoJSON (Multi)Polygon.
+
+        Providers that cannot do this raise RoutingProviderError."""
+        ...
+
+    @abstractmethod
     async def get_alternative_routes(
         self, start: LonLat, end: LonLat, mode: TravelMode, count: int = 3
     ) -> list[RouteResult]:

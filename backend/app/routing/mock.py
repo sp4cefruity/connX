@@ -6,6 +6,7 @@ math has something non-trivial to chew on.
 """
 import math
 
+from app.routing.base import RoutingProviderError
 from app.schemas import GeocodeResult, LonLat, RouteResult, TravelMode
 
 _AVG_SPEED_KMH: dict[TravelMode, float] = {"driving": 35.0, "walking": 5.0, "cycling": 15.0}
@@ -43,6 +44,11 @@ class MockRouting:
         distance_km = round(_haversine_km(start, via) + _haversine_km(via, end), 2)
         duration_min = round(distance_km / _AVG_SPEED_KMH.get(mode, 35.0) * 60, 1)
         return RouteResult(distance_km=distance_km, duration_min=duration_min, geometry=geometry, mode=mode)
+
+    async def get_route_avoiding(
+        self, start: LonLat, end: LonLat, mode: TravelMode, avoid: dict
+    ) -> RouteResult:
+        raise RoutingProviderError("the mock provider cannot route around an area")
 
     async def get_alternative_routes(
         self, start: LonLat, end: LonLat, mode: TravelMode, count: int = 3

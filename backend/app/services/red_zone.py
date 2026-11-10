@@ -29,8 +29,12 @@ def build_red_zone_band(route_b_geometry: list[LonLat], danger_distance_m: float
         return None
 
     band = b_line.buffer(danger_distance_m).simplify(_SIMPLIFY_TOLERANCE_M, preserve_topology=True)
+    return polygon_to_geojson(band, proj)
 
-    geojson = mapping(band)
+
+def polygon_to_geojson(area, proj: Projection) -> dict:
+    """A Shapely (Multi)Polygon in the metric plane as GeoJSON in lon/lat."""
+    geojson = mapping(area)
     polygons = [geojson["coordinates"]] if geojson["type"] == "Polygon" else geojson["coordinates"]
     out = [
         [[(round(p.lon, 6), round(p.lat, 6)) for p in proj.to_lonlat(ring)] for ring in polygon]

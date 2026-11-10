@@ -112,6 +112,13 @@ def _has_trouble(best: ScoredRoute, payload: RecommendRequest) -> bool:
     return bool(t.shared_km or t.close_passes or t.red_spot_hits)
 
 
+async def _route_avoiding(provider: RoutingProvider, payload: RecommendRequest, zone: dict) -> RouteResult | None:
+    try:
+        return await provider.get_route_avoiding(payload.primary_start, payload.primary_end, payload.mode, zone)
+    except RoutingProviderError:
+        return None  # unsupported, over a size limit, or no route around it
+
+
 async def _route_via(provider: RoutingProvider, payload: RecommendRequest, via) -> RouteResult | None:
     try:
         return await provider.get_route_via(payload.primary_start, via, payload.primary_end, payload.mode)
@@ -246,47 +253,74 @@ async def recommend_route(
     scored = _rank(analysed, payload, has_comparison=comparison is not None)
 
     # The providers often return a single route, and every alternative shares
-    # its roads. If the best one still has trouble on it, route around that
-    # trouble ourselves and let scoring judge the detours.
+    # its roads. If the best one still has trouble on it, build detours
+    # ourselves and let scoring judge them.
     detours_wanted = min(MAX_DETOUR_CALLS, payload.alternatives_count - len(candidates))
     if detours_wanted > 0 and _has_trouble(scored[0], payload):
         best = scored[0]
         avoiding_b = comparison is not None and payload.avoid_overlap
-        waypoints = detours.plan_waypoints(
-            route=best.route.geometry,
-            avoid_route=comparison.geometry if avoiding_b else None,
-            avoid_circles=[
-                detours.AvoidCircle(h.red_spot.longitude, h.red_spot.latitude, h.red_spot.radius_m)
-                for h in best.red_spot_hits
-                if payload.avoid_red_spots and h.intersects
-            ],
-            danger_distance_m=payload.danger_distance_m,
-            overlap=best.overlap if avoiding_b else _NO_OVERLAP,
-            encounters=best.encounters if avoiding_b else [],
-            max_waypoints=detours_wanted,
-        )
-        if waypoints:
-            found = await asyncio.gather(*(_route_via(provider, payload, wp) for wp in waypoints))
+        best_overlap = best.overlap if avoiding_b else _NO_OVERLAP
+        circles = [
+            detours.AvoidCircle(h.red_spot.longitude, h.red_spot.latitude, h.red_spot.radius_m)
+            for h in best.red_spot_hits
+            if payload.avoid_red_spots and h.intersects
+        ]
+        baseline = _trouble(best.overlap, best.encounters, best.red_spot_hits, payload)
+
+        def improving(routes: list[RouteResult]) -> list[_Analysed]:
+            """Detours worth offering: new roads that really get away from the trouble.
+
+            A detour that still runs along Route B is no use even when it is
+            longer, and so shares a smaller percentage of its length.
+            """
             kept = detours.filter_detours(
-                [r for r in found if r is not None],
+                routes,
                 candidates,
                 tolerance_m=settings.overlap_tolerance_m,
                 min_meaningful_overlap_m=settings.min_meaningful_overlap_m,
                 merge_gap_m=settings.overlap_merge_gap_m,
             )
-            # A detour that still runs along Route B is not worth offering, even
-            # when it is longer and so looks better by overlap percentage.
-            baseline = _trouble(best.overlap, best.encounters, best.red_spot_hits, payload)
-            better = [
+            return [
                 a
                 for a in (analyse(r) for r in kept)
                 if detours.improves_on(_trouble(a.overlap, a.encounters, a.red_spot_hits, payload), baseline)
             ]
-            if better:
-                analysed += better
-                scored = _rank(analysed, payload, has_comparison=comparison is not None)
-            else:
-                best.explanation.append(NO_BETTER_ROUTE)
+
+        tried = False
+        better: list[_Analysed] = []
+
+        # 1. Ask the router to keep out of Route B's road and the Red spots.
+        #    One call. Only some providers can (ORS) and it refuses trips over
+        #    its size limits, so this is best effort.
+        zone = detours.build_avoid_zone(
+            best.route.geometry, comparison.geometry if avoiding_b else None, circles, best_overlap
+        )
+        if zone:
+            tried = True
+            avoided = await _route_avoiding(provider, payload, zone)
+            better = improving([avoided] if avoided else [])
+
+        # 2. Otherwise steer with via points beside each trouble stretch.
+        if not better:
+            waypoints = detours.plan_waypoints(
+                route=best.route.geometry,
+                avoid_route=comparison.geometry if avoiding_b else None,
+                avoid_circles=circles,
+                danger_distance_m=payload.danger_distance_m,
+                overlap=best_overlap,
+                encounters=best.encounters if avoiding_b else [],
+                max_waypoints=detours_wanted,
+            )
+            if waypoints:
+                tried = True
+                found = await asyncio.gather(*(_route_via(provider, payload, wp) for wp in waypoints))
+                better = improving([r for r in found if r is not None])
+
+        if better:
+            analysed += better
+            scored = _rank(analysed, payload, has_comparison=comparison is not None)
+        elif tried:
+            best.explanation.append(NO_BETTER_ROUTE)
 
     recommended_index = next(i for i, s in enumerate(scored) if s.tier == "recommended")
 

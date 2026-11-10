@@ -24,6 +24,16 @@ Route B.
   closest passes. Via points within one offset of each other share a detour.
 - `filter_detours` drops a detour that is >=90% on a road we already have, or
   that takes more than twice the fastest route's time.
+- **Avoid zone first.** Providers also gain `get_route_avoiding(start, end,
+  mode, area)`. Only ORS implements it (`options.avoid_polygons`); OSRM and the
+  mock refuse. `build_avoid_zone` makes the area: a 40 m strip along Route B's
+  road beside each shared stretch (padded 150 m along A), plus the Red spots the
+  route enters. One call replaces the guesswork of via points. ORS caps avoid
+  areas at 20 km across, 200 km2 and 150 km routes, so a zone over 19 km
+  across is not sent, and any provider error just moves on to via points. On
+  the Cuttack corridor below the zone is 2.0 x 13.5 km, 1.2 km2.
+  A "no route avoids this" answer does not count against the circuit breaker;
+  a quota refusal does. There is no OSRM fallback for it.
 - A detour must also **improve on the route it detours around** (`improves_on`):
   fewer Red spots, fewer close passes, or at most 80% of the shared km, and
   never more Red spots or over 105% of the shared km. Without this, a longer
@@ -33,16 +43,24 @@ Route B.
   but scored better, 47.8% against 52.3%).
 - `/recommend` runs this only when the provider returned fewer routes than
   `alternatives_count` **and** the best route has something the user asked to
-  avoid. It spends at most `min(3, alternatives_count - routes_found)` extra
-  routing calls, in parallel. Detours are scored and ranked with the provider's
-  candidates, so the response schema is unchanged.
+  avoid. It tries the avoid zone (one call); if that gives nothing better it
+  tries via points, at most `min(3, alternatives_count - routes_found)` calls in
+  parallel. Detours are scored and ranked with the provider's candidates, so the
+  response schema is unchanged.
+- **Scoring measures overlap in km, not percent of the route.** The penalty is
+  the shared km as a percentage of the *shortest* candidate, so extra distance
+  can no longer dilute it. This applies to the provider's own alternatives too.
 - When no detour survives, the recommended route's explanation says "No better
   route found nearby" rather than leaving a single route unexplained.
 
 ## Consequences
 
-- A click can cost up to 3 more routing calls (ORS free tier: 2,000 a day).
-  The route cache absorbs repeats of the same trip.
+- A click can cost up to 4 more routing calls (the avoid zone, then 3 via
+  points; ORS free tier: 2,000 a day). The route cache absorbs repeats of the
+  same trip. On OSRM alone the avoid call is refused locally, without a
+  request, so only the via points cost anything.
+- The avoid-zone path is written against ORS's documented API and tested with a
+  mock server. It has not been run against live ORS (no key was available).
 - A detour only exists if there is a road on the far side. In a one-road
   corridor the result is still a single route, now with that explanation line.
 - The via point is a guess: the router may snap it back onto the shared road.
@@ -51,8 +69,6 @@ Route B.
   highway that does not work: the router goes out to the point and rejoins the
   same road. Probed live on that same pair, one via point shared 14.35 to 15.37
   km (original 14.22 km); three points 1,500 m off shared 7.83 km but cost 19 km
-  and 45 minutes more. Those detours are now rejected, so such trips report "No
-  better route found nearby". Fixing that properly needs the router to know
-  about Route B (ORS `avoid_polygons`) or several via points per stretch.
-- Scoring still penalises overlap by percentage, which rewards padding for
-  provider alternatives too. Not changed here.
+  and 45 minutes more. Those detours are now rejected. With ORS the avoid zone
+  handles this case; on OSRM alone such trips report "No better route found
+  nearby", because OSRM cannot be told about Route B.

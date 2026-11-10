@@ -11,8 +11,10 @@ def _route(distance_km: float, duration_min: float) -> RouteResult:
     )
 
 
-def _overlap(pct: float) -> OverlapResult:
-    return OverlapResult(distance_km=0, percentage=pct, duration_min=0, segments=[])
+def _overlap(distance_km: float, route_km: float = 9.2) -> OverlapResult:
+    """`distance_km` of `route_km` shared with Route B."""
+    pct = round(distance_km / route_km * 100, 1) if route_km else 0.0
+    return OverlapResult(distance_km=distance_km, percentage=pct, duration_min=0, segments=[])
 
 
 def test_slower_zero_overlap_route_beats_faster_high_overlap_route():
@@ -23,7 +25,7 @@ def test_slower_zero_overlap_route_beats_faster_high_overlap_route():
     score_a = score_route(
         ScoringInputs(
             route=route_a,
-            overlap=_overlap(20.0),
+            overlap=_overlap(1.84),  # 20% of 9.2 km
             red_spot_hits=[],
             avoid_overlap=True,
             avoid_red_spots=True,
@@ -87,7 +89,7 @@ def test_red_zone_outranks_overlap_penalty():
     score_avoids = score_route(
         ScoringInputs(
             route=route_avoids_home,
-            overlap=_overlap(5.0),
+            overlap=_overlap(0.49, route_km=9.8),  # 5% of 9.8 km
             red_spot_hits=[RedSpotHit(red_spot=home, intersects=False, min_distance_m=800)],
             avoid_overlap=True, avoid_red_spots=True,
             fastest_duration_min=25, shortest_distance_km=9.0,
@@ -100,12 +102,64 @@ def test_avoid_overlap_toggle_off_removes_overlap_penalty():
     route = _route(distance_km=9.2, duration_min=24)
     score = score_route(
         ScoringInputs(
-            route=route, overlap=_overlap(80.0), red_spot_hits=[],
+            route=route, overlap=_overlap(7.36), red_spot_hits=[],  # 80% of 9.2 km
             avoid_overlap=False, avoid_red_spots=True,
             fastest_duration_min=24, shortest_distance_km=9.2,
         )
     )
     assert score.overlap_penalty == 0
+
+
+def _overlap_penalty(route_km: float, shared_km: float, shortest_km: float, duration_min: float = 24):
+    return score_route(
+        ScoringInputs(
+            route=_route(distance_km=route_km, duration_min=duration_min),
+            overlap=_overlap(shared_km, route_km),
+            red_spot_hits=[],
+            avoid_overlap=True,
+            avoid_red_spots=True,
+            fastest_duration_min=24,
+            shortest_distance_km=shortest_km,
+        )
+    ).overlap_penalty
+
+
+def test_padding_a_route_does_not_dilute_its_overlap_penalty():
+    # Same 5 km shared with Route B. The 12 km route shares a smaller
+    # percentage than the 10 km one, but no less road.
+    short = _overlap_penalty(route_km=10.0, shared_km=5.0, shortest_km=10.0)
+    padded = _overlap_penalty(route_km=12.0, shared_km=5.0, shortest_km=10.0)
+    assert padded == short
+
+
+def test_sharing_more_km_costs_more():
+    assert _overlap_penalty(10.0, 6.0, 10.0) > _overlap_penalty(10.0, 3.0, 10.0)
+
+
+def test_a_padded_route_with_the_same_shared_km_loses_to_the_original():
+    original = score_route(
+        ScoringInputs(
+            route=_route(distance_km=27.12, duration_min=24.2),
+            overlap=_overlap(14.22, 27.12),
+            red_spot_hits=[],
+            avoid_overlap=True,
+            avoid_red_spots=True,
+            fastest_duration_min=24.2,
+            shortest_distance_km=27.12,
+        )
+    )
+    padded = score_route(
+        ScoringInputs(
+            route=_route(distance_km=29.9, duration_min=31.2),
+            overlap=_overlap(14.35, 29.9),  # the live OSRM detour
+            red_spot_hits=[],
+            avoid_overlap=True,
+            avoid_red_spots=True,
+            fastest_duration_min=24.2,
+            shortest_distance_km=27.12,
+        )
+    )
+    assert original.total < padded.total
 
 
 # ---------- encounter term (ticket 07) ----------

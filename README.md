@@ -37,8 +37,10 @@ connection. Set `ROUTING_PROVIDER=mock` / `GEOCODING_PROVIDER=mock` in
 - Public routing and geocoding servers have no SLA. When they are slow the app
   shows "Search is slow right now" or a route error; try again.
 - Recommend builds its own detours when the servers return too few
-  alternatives (ADR 0006). It still returns one route where there is no other
-  road to take, and then says "No better route found nearby".
+  alternatives (ADR 0006). With an `ORS_API_KEY` it asks the router to keep out
+  of Route B's road. On OSRM alone it can only steer with via points, which do
+  not help on a long shared highway; it then says "No better route found
+  nearby", as it does where there is no other road to take.
 - On a phone, the map is fitted while the bottom sheet is open, so the ends of
   a long route can sit under the sheet or off the top. Collapse the sheet and
   pan to see them.

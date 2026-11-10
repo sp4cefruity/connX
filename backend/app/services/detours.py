@@ -15,10 +15,12 @@ from dataclasses import dataclass
 
 from shapely.geometry import LineString, Point
 from shapely.geometry.base import BaseGeometry
+from shapely.ops import substring, unary_union
 
 from app.schemas import Encounter, LonLat, OverlapResult, RouteResult
 from app.services.overlap import compute_overlap
 from app.services.projection import Projection, mean_lat
+from app.services.red_zone import polygon_to_geojson
 
 # The via point sits this many danger distances (or Red spot radii) off the
 # route, but never closer than the floor: a point 75 m off a road would simply
@@ -86,6 +88,66 @@ def _via_point(route: LineString, trouble: _Stretch) -> Point | None:
     ]
     # The side that gets further from what we are avoiding.
     return max(sides, key=trouble.avoid.distance)
+
+
+# Avoid zone (for providers that can route around an area, e.g. ORS
+# `avoid_polygons`). The strip around Route B's road must be wider than the
+# overlap tolerance, so running beside the road does not count as on it, and
+# is padded along A so a detour cannot hug the ends of the shared stretch.
+AVOID_ROAD_BUFFER_M = 40.0
+AVOID_STRETCH_MARGIN_M = 150.0
+# ORS's public API refuses avoid areas wider or taller than 20 km.
+MAX_AVOID_EXTENT_M = 19_000.0
+_SIMPLIFY_TOLERANCE_M = 2.0
+
+
+def build_avoid_zone(
+    route: list[LonLat],
+    avoid_route: list[LonLat] | None,
+    avoid_circles: list[AvoidCircle],
+    overlap: OverlapResult,
+) -> dict | None:
+    """GeoJSON (Multi)Polygon for a router to keep clear of, or None.
+
+    That is the strip of Route B's road beside each shared stretch of `route`,
+    plus the Red spots it enters. None when there is nothing to avoid, or the
+    zone is bigger than a provider will take (the caller then falls back to
+    via-point detours).
+    """
+    if len(route) < 2:
+        return None
+
+    proj = Projection(ref_lat=mean_lat(route))
+    line = LineString(proj.to_xy(route))
+    if line.length == 0:
+        return None
+
+    parts: list[BaseGeometry] = []
+
+    if avoid_route and len(avoid_route) >= 2 and overlap.segments:
+        b_strip = LineString(proj.to_xy(avoid_route)).buffer(AVOID_ROAD_BUFFER_M)
+        stretches = [
+            substring(line, seg.start_fraction * line.length, seg.end_fraction * line.length)
+            for seg in overlap.segments
+            if seg.end_fraction > seg.start_fraction
+        ]
+        if stretches:
+            region = unary_union(stretches).buffer(AVOID_STRETCH_MARGIN_M)
+            parts.append(b_strip.intersection(region))
+
+    for circle in avoid_circles:
+        centre = Point(proj.to_xy([LonLat(lon=circle.lon, lat=circle.lat)])[0])
+        parts.append(centre.buffer(circle.radius_m))
+
+    zone = unary_union([p for p in parts if not p.is_empty])
+    if zone.is_empty:
+        return None
+
+    min_x, min_y, max_x, max_y = zone.bounds
+    if max(max_x - min_x, max_y - min_y) > MAX_AVOID_EXTENT_M:
+        return None
+
+    return polygon_to_geojson(zone.simplify(_SIMPLIFY_TOLERANCE_M, preserve_topology=True), proj)
 
 
 @dataclass(frozen=True)

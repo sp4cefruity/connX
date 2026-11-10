@@ -39,6 +39,9 @@ class _TwoCandidates:
     async def get_route_via(self, start, via, end, mode):
         raise RoutingProviderError("this fake cannot route via a waypoint")
 
+    async def get_route_avoiding(self, start, end, mode, avoid):
+        raise RoutingProviderError("this fake cannot route around an area")
+
 
 class _FakeUser:
     id = "user-1"

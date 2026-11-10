@@ -7,13 +7,14 @@ Route B is a parallel line 55 m north of it (lat 20.2905)."""
 import math
 
 import pytest
-from shapely.geometry import LineString, Point
+from shapely.geometry import LineString, Point, shape
 
 from app.schemas import Encounter, LonLat, OverlapResult, OverlapSegment, RouteResult
 from app.services.detours import (
     MIN_OFFSET_M,
     AvoidCircle,
     Trouble,
+    build_avoid_zone,
     filter_detours,
     improves_on,
     plan_waypoints,
@@ -220,6 +221,68 @@ def test_entering_more_red_spots_is_never_an_improvement():
 def test_less_shared_road_does_not_excuse_more_shared_road_elsewhere():
     # Fewer close passes, but far more road shared with B.
     assert not improves_on(_t(shared_km=20.0, close_passes=0), baseline=_t(shared_km=14.2, close_passes=2))
+
+
+def _at(lon: float, lat: float) -> Point:
+    return Point(lon, lat)
+
+
+def _zone(**kw):
+    args = dict(
+        route=ROUTE,
+        avoid_route=ROUTE,  # B shares A's road
+        avoid_circles=[],
+        overlap=_overlap(0.3, 0.7),
+    )
+    args.update(kw)
+    return build_avoid_zone(**args)
+
+
+def test_avoid_zone_covers_the_shared_road_beside_the_overlap():
+    zone = shape(_zone())
+    assert zone.contains(_at(85.810, A_LAT))  # middle of the overlap
+    assert zone.contains(_at(85.810, A_LAT + 30 / M_PER_DEG))  # 30 m off the road
+    assert not zone.contains(_at(85.810, A_LAT + 60 / M_PER_DEG))  # wider than the road, not a district
+
+
+def test_avoid_zone_stops_shortly_after_the_overlap_ends():
+    zone = shape(_zone())
+    assert not zone.contains(_at(85.8005, A_LAT))  # the first 25% of A is not shared
+    assert not zone.contains(_at(85.8195, A_LAT))
+
+
+def test_avoid_zone_follows_b_not_a():
+    # B runs 20 m north of A (within the overlap tolerance): the zone is
+    # centred on B, so it reaches further north than south of A.
+    b = [LonLat(lon=85.800, lat=A_LAT + 20 / M_PER_DEG), LonLat(lon=85.820, lat=A_LAT + 20 / M_PER_DEG)]
+    zone = shape(_zone(avoid_route=b))
+    assert zone.contains(_at(85.810, A_LAT + 55 / M_PER_DEG))
+    assert not zone.contains(_at(85.810, A_LAT - 30 / M_PER_DEG))
+
+
+def test_avoid_zone_includes_red_spot_circles():
+    circle = AvoidCircle(lon=85.805, lat=A_LAT, radius_m=150.0)
+    zone = shape(_zone(avoid_route=None, overlap=NO_OVERLAP, avoid_circles=[circle]))
+    assert zone.contains(_at(85.805, A_LAT))
+    assert zone.contains(_at(85.805, A_LAT + 120 / M_PER_DEG))
+    assert not zone.contains(_at(85.805, A_LAT + 200 / M_PER_DEG))
+
+
+def test_avoid_zone_is_valid_geojson_in_lon_lat():
+    geo = _zone()
+    assert geo["type"] in ("Polygon", "MultiPolygon")
+    lon, lat = geo["coordinates"][0][0] if geo["type"] == "Polygon" else geo["coordinates"][0][0][0]
+    assert 85.79 < lon < 85.83 and 20.28 < lat < 20.30
+
+
+def test_nothing_to_avoid_gives_no_zone():
+    assert _zone(overlap=NO_OVERLAP) is None
+
+
+def test_a_zone_wider_than_the_provider_allows_gives_no_zone():
+    # ~44 km east-west, shared the whole way: over the 20 km avoid-area extent.
+    long_route = [LonLat(lon=85.60, lat=A_LAT), LonLat(lon=86.00, lat=A_LAT)]
+    assert _zone(route=long_route, avoid_route=long_route, overlap=_overlap(0.0, 1.0)) is None
 
 
 def test_offset_distance_is_metric_not_degrees():

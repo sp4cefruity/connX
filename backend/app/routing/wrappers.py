@@ -5,6 +5,8 @@ and a result cache. Neither knows which provider is behind it, so swapping
 providers stays a config change (ADR 0005).
 """
 import asyncio
+import hashlib
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -74,10 +76,35 @@ class FallbackRouting:
     async def get_route_via(self, start: LonLat, via: LonLat, end: LonLat, mode: TravelMode) -> RouteResult:
         return await self._call("get_route_via", start, via, end, mode)
 
+    async def get_route_avoiding(
+        self, start: LonLat, end: LonLat, mode: TravelMode, avoid: dict
+    ) -> RouteResult:
+        """Only the primary (ORS) can route around an area, so there is no fallback.
+
+        "No route avoids that area" says nothing about the provider's health,
+        so only a quota refusal counts against the circuit breaker.
+        """
+        if not self._primary_available():
+            raise RoutingProviderError("primary routing is disabled and the fallback cannot avoid areas")
+        try:
+            result = await self._primary.get_route_avoiding(start, end, mode, avoid)
+        except RoutingQuotaError as exc:
+            self._record_failure(exc)
+            raise
+        self._failures = 0
+        return result
+
 
 def _point(p: LonLat) -> tuple[float, float]:
     # 5 decimals is ~1 m: GPS jitter and re-clicks hit the same entry.
     return round(p.lon, 5), round(p.lat, 5)
+
+
+def _digest(area: dict | None) -> str | None:
+    """A short, stable cache-key part for an avoid area."""
+    if area is None:
+        return None
+    return hashlib.sha1(json.dumps(area, sort_keys=True).encode()).hexdigest()
 
 
 def _copy(routes: list[RouteResult]) -> list[RouteResult]:
@@ -111,23 +138,31 @@ class CachedRouting:
     async def get_route_via(self, start: LonLat, via: LonLat, end: LonLat, mode: TravelMode) -> RouteResult:
         return (await self._cached(start, end, mode, 1, via))[0]
 
-    async def _fetch(self, start, end, mode, count, via=None) -> list[RouteResult]:
+    async def get_route_avoiding(
+        self, start: LonLat, end: LonLat, mode: TravelMode, avoid: dict
+    ) -> RouteResult:
+        return (await self._cached(start, end, mode, 1, avoid=avoid))[0]
+
+    async def _fetch(self, start, end, mode, count, via=None, avoid=None) -> list[RouteResult]:
+        if avoid is not None:
+            return [await self._inner.get_route_avoiding(start, end, mode, avoid)]
         if via is not None:
             return [await self._inner.get_route_via(start, via, end, mode)]
         if count == 1:
             return [await self._inner.get_route(start, end, mode)]
         return await self._inner.get_alternative_routes(start, end, mode, count)
 
-    async def _cached(self, start, end, mode, count, via=None) -> list[RouteResult]:
-        # A via route is its own entry: it is not the direct route for the same ends.
-        key = (_point(start), _point(end), mode, count, _point(via) if via else None)
+    async def _cached(self, start, end, mode, count, via=None, avoid=None) -> list[RouteResult]:
+        # Via and avoid routes are their own entries: neither is the direct
+        # route for the same ends.
+        key = (_point(start), _point(end), mode, count, _point(via) if via else None, _digest(avoid))
         hit = self._cache.get(key)
         if hit is not None:
             return _copy(hit)
 
         task = self._in_flight.get(key)
         if task is None:
-            task = asyncio.ensure_future(self._fetch(start, end, mode, count, via))
+            task = asyncio.ensure_future(self._fetch(start, end, mode, count, via, avoid))
             self._in_flight[key] = task
 
             def done(t: asyncio.Future) -> None:

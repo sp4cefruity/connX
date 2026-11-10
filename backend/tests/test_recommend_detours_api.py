@@ -11,6 +11,7 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from shapely.geometry import Point, shape
 
 from app.auth import get_or_create_user
 from app.database import get_db
@@ -36,8 +37,10 @@ def _line(lat: float, duration_min: float) -> RouteResult:
 class _Provider:
     """One direct route on the road; detours land at the via point's latitude."""
 
-    def __init__(self, via_duration_min=5.0, via_lat=None, via_error=None, via_geometry=None):
+    def __init__(self, via_duration_min=5.0, via_lat=None, via_error=None, via_geometry=None, avoid_lat=None):
         self.via_calls: list[LonLat] = []
+        self.avoid_calls: list[dict] = []
+        self._avoid_lat = avoid_lat  # None: this provider cannot route around an area
         self._via_duration = via_duration_min
         self._via_lat = via_lat
         self._via_error = via_error
@@ -48,6 +51,12 @@ class _Provider:
 
     async def get_alternative_routes(self, start, end, mode, count=3):
         return [_line(ROAD_LAT, 4.0)]
+
+    async def get_route_avoiding(self, start, end, mode, avoid):
+        self.avoid_calls.append(avoid)
+        if self._avoid_lat is None:
+            raise RoutingProviderError("this provider cannot route around an area")
+        return _line(self._avoid_lat, 5.0)
 
     async def get_route_via(self, start, via, end, mode):
         self.via_calls.append(via)
@@ -177,6 +186,76 @@ def test_a_far_slower_detour_is_dropped():
     provider = _Provider(via_duration_min=9.0)  # more than 2 x the 4 min road
     body = _post(_client(provider), _body())
     assert len(body["routes"]) == 1
+
+
+CLEAR_LAT = ROAD_LAT - 0.003  # ~330 m south of the shared road
+
+
+def test_a_route_around_the_shared_road_is_tried_first_and_needs_no_via_points():
+    provider = _Provider(avoid_lat=CLEAR_LAT)
+    body = _post(_client(provider), _body())
+
+    assert len(provider.avoid_calls) == 1
+    assert provider.via_calls == []
+    zone = shape(provider.avoid_calls[0])
+    assert zone.contains(Point(85.810, ROAD_LAT))  # keeps clear of Route B's road
+    assert not zone.contains(Point(85.810, ROAD_LAT + 0.001))  # but only its road
+    best = _recommended(body)
+    assert _lat(best) == CLEAR_LAT
+    assert best["overlap"]["percentage"] == 0
+    assert len(body["routes"]) == 2
+
+
+def test_when_the_provider_cannot_avoid_areas_via_point_detours_are_used():
+    provider = _Provider()  # avoid raises
+    body = _post(_client(provider), _body())
+    assert len(provider.avoid_calls) == 1
+    assert provider.via_calls
+    assert _lat(_recommended(body)) != ROAD_LAT
+
+
+def test_an_avoid_route_that_still_shares_the_road_is_not_offered_and_via_points_take_over():
+    provider = _Provider(avoid_lat=ROAD_LAT)  # "avoids" it, but lands right back on the road
+    body = _post(_client(provider), _body())
+    assert provider.via_calls
+    assert all(r["overlap"]["percentage"] < 100 for r in body["routes"] if r["tier"] == "recommended")
+
+
+def test_no_avoid_call_when_the_route_has_nothing_to_avoid():
+    provider = _Provider(avoid_lat=CLEAR_LAT)
+    far_b = _body()
+    far_b["comparison_start"] = {"lon": 85.800, "lat": FAR_LAT}
+    far_b["comparison_end"] = {"lon": 85.820, "lat": FAR_LAT}
+    _post(_client(provider), far_b)
+    assert provider.avoid_calls == []
+
+
+def test_no_avoid_call_when_the_provider_already_gave_enough_routes():
+    provider = _Provider(avoid_lat=CLEAR_LAT)
+    _post(_client(provider), _body(alternatives_count=1))
+    assert provider.avoid_calls == []
+
+
+def test_nothing_works_leaves_the_original_with_the_explanation():
+    provider = _Provider(via_error=RoutingProviderError("boom"))  # avoid raises too
+    body = _post(_client(provider), _body())
+    assert len(body["routes"]) == 1
+    assert NO_BETTER_ROUTE in _recommended(body)["explanation"]
+
+
+def test_the_avoid_zone_includes_red_spots_the_route_enters(monkeypatch):
+    spot = _red_spot(85.810, ROAD_LAT, radius_m=150.0)
+    monkeypatch.setattr(routes_router, "get_active_red_spots", lambda db, user_id: [spot])
+    provider = _Provider(avoid_lat=CLEAR_LAT)
+    body = _recommend_body(avoid_red_spots=True)
+    body["comparison_start"] = body["comparison_end"] = None
+
+    result = _post(_client(provider), body)
+
+    zone = shape(provider.avoid_calls[0])
+    assert zone.contains(Point(85.810, ROAD_LAT))
+    assert zone.contains(Point(85.810, ROAD_LAT + 120 / 111_320))
+    assert not any(h["intersects"] for h in _recommended(result)["red_spot_hits"])
 
 
 def _red_spot(lon: float, lat: float, radius_m: float = 100.0):

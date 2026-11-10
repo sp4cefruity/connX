@@ -89,6 +89,9 @@ class _StubProvider:
     async def get_route_via(self, start, via, end, mode):
         raise RoutingProviderError("this stub cannot route via a waypoint")
 
+    async def get_route_avoiding(self, start, end, mode, avoid):
+        raise RoutingProviderError("this stub cannot route around an area")
+
 
 class _FakeUser:
     id = "user-1"

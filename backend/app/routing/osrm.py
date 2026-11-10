@@ -47,6 +47,11 @@ class OSRMRouting:
         routes = await self._routes([start, via, end], mode, count=1)
         return routes[0]
 
+    async def get_route_avoiding(
+        self, start: LonLat, end: LonLat, mode: TravelMode, avoid: dict
+    ) -> RouteResult:
+        raise RoutingProviderError("OSRM cannot route around an area")
+
     async def get_alternative_routes(
         self, start: LonLat, end: LonLat, mode: TravelMode, count: int = 3
     ) -> list[RouteResult]:
