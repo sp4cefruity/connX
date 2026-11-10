@@ -8,7 +8,7 @@
  * danger distance (ADR 0001); encounters, red spot hits, and, for a
  * recommendation, the score, explanation, tier and order all can.
  */
-import type { CompareResponse, RecommendResponse, RouteResult, RouteView, ScoredRoute } from "@/lib/types";
+import type { CompareResponse, ComparisonView, RecommendResponse, RouteResult, ScoredRoute } from "@/lib/types";
 
 export interface Ranking {
   routes: ScoredRoute[];
@@ -57,18 +57,22 @@ export function refreshRanking(current: Ranking, fresh: RecommendResponse): Rank
 }
 
 /** A compare response as the Route A view the planner shows. */
-export function comparisonFrom(result: CompareResponse): RouteView {
+export function comparisonFrom(result: CompareResponse): ComparisonView {
   return {
     route: result.primary_route,
+    comparison_route: result.comparison_route,
     overlap: result.overlap,
     encounters: result.encounters,
     red_spot_hits: result.red_spots,
   };
 }
 
-/** Same as refreshRanking, for the comparison view's single Route A. */
-export function refreshComparison(current: RouteView | null, fresh: CompareResponse): RouteView {
+/** Same as refreshRanking, for the comparison view's Route A and Route B. */
+export function refreshComparison(current: ComparisonView | null, fresh: CompareResponse): ComparisonView {
   const next = comparisonFrom(fresh);
   if (!current || routeKey(current.route) !== routeKey(next.route)) return next;
-  return { ...next, route: current.route, overlap: current.overlap };
+  const sameRouteB = routeKey(current.comparison_route) === routeKey(next.comparison_route);
+  // Overlap compares A with B, so it is only reusable while both are unchanged.
+  if (!sameRouteB) return { ...next, route: current.route };
+  return { ...next, route: current.route, overlap: current.overlap, comparison_route: current.comparison_route };
 }

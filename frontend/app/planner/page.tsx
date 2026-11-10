@@ -134,7 +134,8 @@ export default function PlannerPage() {
         />
       );
     }
-    return results.comparison ? <ComparisonSummary view={results.comparison} placement={placement} /> : null;
+    if (!results.comparison) return null;
+    return <ComparisonSummary view={results.comparison} placement={placement} />;
   }
   const hasResults = results.view === "recommend" ? results.ranking.routes.length > 0 : !!results.comparison;
 

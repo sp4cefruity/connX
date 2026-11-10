@@ -94,6 +94,9 @@ export interface ScoredRoute {
 /** What the map and side panel need about one Route A, compared or recommended. */
 export type RouteView = Pick<ScoredRoute, "route" | "overlap" | "encounters" | "red_spot_hits">;
 
+/** The comparison view's Route A, together with the Route B it is compared against. */
+export type ComparisonView = RouteView & { comparison_route: RouteResult };
+
 /** GeoJSON Polygon / MultiPolygon geometry, coordinates in [lon, lat]. */
 export type RedZoneBand =
   | { type: "Polygon"; coordinates: number[][][] }

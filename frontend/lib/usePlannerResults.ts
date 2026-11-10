@@ -9,7 +9,7 @@ import {
   refreshRanking,
   type Ranking,
 } from "@/lib/plannerRefresh";
-import type { LonLat, RedZoneBand, RouteResult, RouteView, TravelMode } from "@/lib/types";
+import type { ComparisonView, LonLat, RedZoneBand, RouteResult, RouteView, TravelMode } from "@/lib/types";
 
 /** "compare" is the primary view; "recommend" is the secondary, ranked one. */
 export type PlannerView = "compare" | "recommend";
@@ -32,7 +32,7 @@ const IDLE_STATUS = "Enter both routes to compare";
 
 export function usePlannerResults(inputs: PlannerInputs) {
   const [view, setView] = useState<PlannerView | null>(null);
-  const [comparison, setComparison] = useState<RouteView | null>(null);
+  const [comparison, setComparison] = useState<ComparisonView | null>(null);
   const [ranking, setRanking] = useState<Ranking>({ routes: [], selectedIndex: 0 });
   const [comparisonRoute, setComparisonRoute] = useState<RouteResult | null>(null);
   const [redZoneBand, setRedZoneBand] = useState<RedZoneBand | null>(null);
@@ -162,7 +162,9 @@ export function usePlannerResults(inputs: PlannerInputs) {
     comparison,
     ranking,
     selectIndex: (i: number) => setRanking((cur) => ({ ...cur, selectedIndex: i })),
-    comparisonRoute,
+    // In the compare view Route B lives on the comparison itself, so a slider
+    // refresh that changes it updates the map and the card together.
+    comparisonRoute: view === "compare" && comparison ? comparison.comparison_route : comparisonRoute,
     redZoneBand,
     status,
     errorMsg,
