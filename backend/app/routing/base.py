@@ -27,6 +27,13 @@ class RoutingProvider(ABC):
         ...
 
     @abstractmethod
+    async def get_route_via(
+        self, start: LonLat, via: LonLat, end: LonLat, mode: TravelMode
+    ) -> RouteResult:
+        """The route start -> via -> end. The provider snaps `via` to the nearest road."""
+        ...
+
+    @abstractmethod
     async def get_alternative_routes(
         self, start: LonLat, end: LonLat, mode: TravelMode, count: int = 3
     ) -> list[RouteResult]:

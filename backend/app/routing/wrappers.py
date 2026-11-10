@@ -71,6 +71,9 @@ class FallbackRouting:
     ) -> list[RouteResult]:
         return await self._call("get_alternative_routes", start, end, mode, count)
 
+    async def get_route_via(self, start: LonLat, via: LonLat, end: LonLat, mode: TravelMode) -> RouteResult:
+        return await self._call("get_route_via", start, via, end, mode)
+
 
 def _point(p: LonLat) -> tuple[float, float]:
     # 5 decimals is ~1 m: GPS jitter and re-clicks hit the same entry.
@@ -105,20 +108,26 @@ class CachedRouting:
     ) -> list[RouteResult]:
         return await self._cached(start, end, mode, count)
 
-    async def _fetch(self, start, end, mode, count) -> list[RouteResult]:
+    async def get_route_via(self, start: LonLat, via: LonLat, end: LonLat, mode: TravelMode) -> RouteResult:
+        return (await self._cached(start, end, mode, 1, via))[0]
+
+    async def _fetch(self, start, end, mode, count, via=None) -> list[RouteResult]:
+        if via is not None:
+            return [await self._inner.get_route_via(start, via, end, mode)]
         if count == 1:
             return [await self._inner.get_route(start, end, mode)]
         return await self._inner.get_alternative_routes(start, end, mode, count)
 
-    async def _cached(self, start, end, mode, count) -> list[RouteResult]:
-        key = (_point(start), _point(end), mode, count)
+    async def _cached(self, start, end, mode, count, via=None) -> list[RouteResult]:
+        # A via route is its own entry: it is not the direct route for the same ends.
+        key = (_point(start), _point(end), mode, count, _point(via) if via else None)
         hit = self._cache.get(key)
         if hit is not None:
             return _copy(hit)
 
         task = self._in_flight.get(key)
         if task is None:
-            task = asyncio.ensure_future(self._fetch(start, end, mode, count))
+            task = asyncio.ensure_future(self._fetch(start, end, mode, count, via))
             self._in_flight[key] = task
 
             def done(t: asyncio.Future) -> None:

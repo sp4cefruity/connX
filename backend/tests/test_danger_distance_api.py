@@ -12,6 +12,7 @@ from app.config import Settings
 from app.database import get_db
 from app.routers import routes as routes_router
 from app.routing import get_routing_provider
+from app.routing.base import RoutingProviderError
 from app.schemas import CompareRequest, LonLat, RecommendRequest, RouteResult
 
 A_START, A_END = {"lon": 85.800, "lat": 20.290}, {"lon": 85.820, "lat": 20.290}
@@ -84,6 +85,9 @@ class _StubProvider:
 
     async def get_alternative_routes(self, start, end, mode, count=3):
         return [await self.get_route(start, end, mode)]
+
+    async def get_route_via(self, start, via, end, mode):
+        raise RoutingProviderError("this stub cannot route via a waypoint")
 
 
 class _FakeUser:

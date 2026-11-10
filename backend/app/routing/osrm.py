@@ -43,10 +43,17 @@ class OSRMRouting:
             raise RoutingProviderError("No route found")
         return routes[0]
 
+    async def get_route_via(self, start: LonLat, via: LonLat, end: LonLat, mode: TravelMode) -> RouteResult:
+        routes = await self._routes([start, via, end], mode, count=1)
+        return routes[0]
+
     async def get_alternative_routes(
         self, start: LonLat, end: LonLat, mode: TravelMode, count: int = 3
     ) -> list[RouteResult]:
-        coords = f"{start.lon},{start.lat};{end.lon},{end.lat}"
+        return await self._routes([start, end], mode, count)
+
+    async def _routes(self, points: list[LonLat], mode: TravelMode, count: int) -> list[RouteResult]:
+        coords = ";".join(f"{p.lon},{p.lat}" for p in points)
         url = f"{self._base_url(mode)}/route/v1/{_URL_PROFILE}/{coords}"
         params = {
             "alternatives": "true" if count > 1 else "false",

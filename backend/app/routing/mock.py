@@ -36,6 +36,14 @@ class MockRouting:
         routes = await self.get_alternative_routes(start, end, mode, count=1)
         return routes[0]
 
+    async def get_route_via(self, start: LonLat, via: LonLat, end: LonLat, mode: TravelMode) -> RouteResult:
+        first, second = _wiggly_line(start, via, 0.0), _wiggly_line(via, end, 0.0)
+        # Pin the joints: the wiggle is only approximately zero at the ends.
+        geometry = [start, *first[1:-1], via, *second[1:-1], end]
+        distance_km = round(_haversine_km(start, via) + _haversine_km(via, end), 2)
+        duration_min = round(distance_km / _AVG_SPEED_KMH.get(mode, 35.0) * 60, 1)
+        return RouteResult(distance_km=distance_km, duration_min=duration_min, geometry=geometry, mode=mode)
+
     async def get_alternative_routes(
         self, start: LonLat, end: LonLat, mode: TravelMode, count: int = 3
     ) -> list[RouteResult]:

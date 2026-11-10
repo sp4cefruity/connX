@@ -63,14 +63,21 @@ class ORSRouting:
             raise RoutingProviderError("No route found")
         return routes[0]
 
+    async def get_route_via(self, start: LonLat, via: LonLat, end: LonLat, mode: TravelMode) -> RouteResult:
+        routes = await self._routes([start, via, end], mode, count=1)
+        return routes[0]
+
     async def get_alternative_routes(
         self, start: LonLat, end: LonLat, mode: TravelMode, count: int = 3
     ) -> list[RouteResult]:
+        return await self._routes([start, end], mode, count)
+
+    async def _routes(self, points: list[LonLat], mode: TravelMode, count: int) -> list[RouteResult]:
         profile = _PROFILES.get(mode)
         if profile is None:
             raise RoutingProviderError(f"ORS has no profile for mode '{mode}'")
 
-        body: dict = {"coordinates": [[start.lon, start.lat], [end.lon, end.lat]]}
+        body: dict = {"coordinates": [[p.lon, p.lat] for p in points]}
         if count > 1:
             body["alternative_routes"] = {
                 "target_count": min(count, _MAX_ALTERNATIVES),

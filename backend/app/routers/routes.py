@@ -1,3 +1,6 @@
+import asyncio
+from dataclasses import dataclass
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -12,20 +15,108 @@ from app.schemas import (
     AlternativesRequest,
     CompareRequest,
     CompareResponse,
+    Encounter,
     OverlapResult,
     RecommendRequest,
     RecommendResponse,
+    RedSpotHit,
     RouteRequest,
     RouteResult,
     ScoredRoute,
 )
-from app.services import scoring
+from app.services import detours, scoring
 from app.services.encounters import compute_encounters
 from app.services.overlap import compute_overlap
 from app.services.red_zone import build_red_zone_band
 from app.services.redspots import find_red_spot_hits
 
 router = APIRouter(prefix="/api/routes", tags=["routes"])
+
+# Most extra routing calls one /recommend may spend on detours (ORS free tier
+# is 2,000 a day; the route cache absorbs repeats).
+MAX_DETOUR_CALLS = 3
+NO_BETTER_ROUTE = "No better route found nearby"
+_NO_OVERLAP = OverlapResult(distance_km=0, percentage=0, duration_min=0, segments=[])
+
+
+@dataclass
+class _Analysed:
+    """A candidate route with everything scoring needs to know about it."""
+
+    route: RouteResult
+    overlap: OverlapResult
+    encounters: list[Encounter]
+    red_spot_hits: list[RedSpotHit]
+
+
+def _rank(items: list[_Analysed], payload: RecommendRequest, has_comparison: bool) -> list[ScoredRoute]:
+    """Score every candidate against the others, best first, with tiers set."""
+    fastest_route = min((a.route for a in items), key=lambda r: r.duration_min)
+    shortest_distance = min(a.route.distance_km for a in items)
+
+    scored: list[ScoredRoute] = []
+    for a in items:
+        score = scoring.score_route(
+            scoring.ScoringInputs(
+                route=a.route,
+                overlap=a.overlap,
+                red_spot_hits=a.red_spot_hits,
+                avoid_overlap=payload.avoid_overlap,
+                avoid_red_spots=payload.avoid_red_spots,
+                fastest_duration_min=fastest_route.duration_min,
+                shortest_distance_km=shortest_distance,
+                encounters=a.encounters,
+                danger_distance_m=payload.danger_distance_m,
+            )
+        )
+        explanation = scoring.explain(
+            a.route,
+            a.overlap,
+            a.red_spot_hits,
+            fastest_route,
+            a.encounters if has_comparison else None,
+            payload.danger_distance_m,
+        )
+        scored.append(
+            ScoredRoute(
+                tier="alternative",  # tiers assigned below once we know rank + fastest
+                route=a.route,
+                overlap=a.overlap,
+                encounters=a.encounters,
+                red_spot_hits=a.red_spot_hits,
+                score=score,
+                explanation=explanation,
+            )
+        )
+
+    scored.sort(key=lambda s: s.score.total)
+    scored[0].tier = "recommended"
+    fastest_in_scored = min(scored, key=lambda s: s.route.duration_min)
+    if fastest_in_scored is not scored[0]:
+        fastest_in_scored.tier = "fastest"
+    return scored
+
+
+def _trouble(overlap: OverlapResult, encounters: list[Encounter], hits: list[RedSpotHit], payload: RecommendRequest) -> detours.Trouble:
+    """What a route runs into, counting only what the user asked to avoid."""
+    return detours.Trouble(
+        shared_km=overlap.distance_km if payload.avoid_overlap else 0.0,
+        close_passes=len(encounters) if payload.avoid_overlap else 0,
+        red_spot_hits=sum(1 for h in hits if h.intersects) if payload.avoid_red_spots else 0,
+    )
+
+
+def _has_trouble(best: ScoredRoute, payload: RecommendRequest) -> bool:
+    """Is there anything on `best` that the user asked us to avoid?"""
+    t = _trouble(best.overlap, best.encounters, best.red_spot_hits, payload)
+    return bool(t.shared_km or t.close_passes or t.red_spot_hits)
+
+
+async def _route_via(provider: RoutingProvider, payload: RecommendRequest, via) -> RouteResult | None:
+    try:
+        return await provider.get_route_via(payload.primary_start, via, payload.primary_end, payload.mode)
+    except RoutingProviderError:
+        return None  # a failed detour just means one candidate fewer
 
 
 @router.post("", response_model=RouteResult)
@@ -129,77 +220,73 @@ async def recommend_route(
 
     spots = get_active_red_spots(db, user.id) if payload.avoid_red_spots else []
 
-    tolerance_m = settings.overlap_tolerance_m
-    fastest_duration = min(c.duration_min for c in candidates)
-    shortest_distance = min(c.distance_km for c in candidates)
-    fastest_route = min(candidates, key=lambda c: c.duration_min)
-
-    scored: list[ScoredRoute] = []
-    for candidate in candidates:
+    def analyse(route: RouteResult) -> _Analysed:
         if comparison:
             overlap = compute_overlap(
-                route_a_geometry=candidate.geometry,
-                route_a_duration_min=candidate.duration_min,
+                route_a_geometry=route.geometry,
+                route_a_duration_min=route.duration_min,
                 route_b_geometry=comparison.geometry,
-                tolerance_m=tolerance_m,
+                tolerance_m=settings.overlap_tolerance_m,
                 min_meaningful_overlap_m=settings.min_meaningful_overlap_m,
                 merge_gap_m=settings.overlap_merge_gap_m,
             )
             encounters = compute_encounters(
-                candidate.geometry,
+                route.geometry,
                 comparison.geometry,
                 payload.danger_distance_m,
                 overlap.segments,
                 settings.overlap_merge_gap_m,
             )
         else:
-            overlap = OverlapResult(distance_km=0, percentage=0, duration_min=0, segments=[])
+            overlap = _NO_OVERLAP
             encounters = []
+        return _Analysed(route, overlap, encounters, find_red_spot_hits(route.geometry, spots))
 
-        red_spot_hits = find_red_spot_hits(candidate.geometry, spots)
+    analysed = [analyse(c) for c in candidates]
+    scored = _rank(analysed, payload, has_comparison=comparison is not None)
 
-        score = scoring.score_route(
-            scoring.ScoringInputs(
-                route=candidate,
-                overlap=overlap,
-                red_spot_hits=red_spot_hits,
-                avoid_overlap=payload.avoid_overlap,
-                avoid_red_spots=payload.avoid_red_spots,
-                fastest_duration_min=fastest_duration,
-                shortest_distance_km=shortest_distance,
-                encounters=encounters,
-                danger_distance_m=payload.danger_distance_m,
+    # The providers often return a single route, and every alternative shares
+    # its roads. If the best one still has trouble on it, route around that
+    # trouble ourselves and let scoring judge the detours.
+    detours_wanted = min(MAX_DETOUR_CALLS, payload.alternatives_count - len(candidates))
+    if detours_wanted > 0 and _has_trouble(scored[0], payload):
+        best = scored[0]
+        avoiding_b = comparison is not None and payload.avoid_overlap
+        waypoints = detours.plan_waypoints(
+            route=best.route.geometry,
+            avoid_route=comparison.geometry if avoiding_b else None,
+            avoid_circles=[
+                detours.AvoidCircle(h.red_spot.longitude, h.red_spot.latitude, h.red_spot.radius_m)
+                for h in best.red_spot_hits
+                if payload.avoid_red_spots and h.intersects
+            ],
+            danger_distance_m=payload.danger_distance_m,
+            overlap=best.overlap if avoiding_b else _NO_OVERLAP,
+            encounters=best.encounters if avoiding_b else [],
+            max_waypoints=detours_wanted,
+        )
+        if waypoints:
+            found = await asyncio.gather(*(_route_via(provider, payload, wp) for wp in waypoints))
+            kept = detours.filter_detours(
+                [r for r in found if r is not None],
+                candidates,
+                tolerance_m=settings.overlap_tolerance_m,
+                min_meaningful_overlap_m=settings.min_meaningful_overlap_m,
+                merge_gap_m=settings.overlap_merge_gap_m,
             )
-        )
-        explanation = scoring.explain(
-            candidate,
-            overlap,
-            red_spot_hits,
-            fastest_route,
-            encounters if comparison else None,
-            payload.danger_distance_m,
-        )
-
-        scored.append(
-            ScoredRoute(
-                tier="alternative",  # tiers assigned below once we know rank + fastest
-                route=candidate,
-                overlap=overlap,
-                encounters=encounters,
-                red_spot_hits=red_spot_hits,
-                score=score,
-                explanation=explanation,
-            )
-        )
-
-    scored.sort(key=lambda s: s.score.total)
-
-    for s in scored:
-        s.tier = "alternative"
-    scored[0].tier = "recommended"
-    fastest_in_scored = min(scored, key=lambda s: s.route.duration_min)
-    if fastest_in_scored is not scored[0]:
-        fastest_in_scored.tier = "fastest"
+            # A detour that still runs along Route B is not worth offering, even
+            # when it is longer and so looks better by overlap percentage.
+            baseline = _trouble(best.overlap, best.encounters, best.red_spot_hits, payload)
+            better = [
+                a
+                for a in (analyse(r) for r in kept)
+                if detours.improves_on(_trouble(a.overlap, a.encounters, a.red_spot_hits, payload), baseline)
+            ]
+            if better:
+                analysed += better
+                scored = _rank(analysed, payload, has_comparison=comparison is not None)
+            else:
+                best.explanation.append(NO_BETTER_ROUTE)
 
     recommended_index = next(i for i, s in enumerate(scored) if s.tier == "recommended")
 

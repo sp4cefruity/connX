@@ -45,6 +45,10 @@ in conversation; "Red spot" is the code name (`SavedLocation`).
 Route A and rank them by a score that weighs time, distance, overlap,
 encounters and Red spot hits. Lower score is better.
 
+**Detour** — A candidate the app builds itself when the routing provider
+returns too few alternatives: Route A routed via a point beside a trouble
+stretch (overlap, encounter or Red spot hit), on the side away from it.
+
 **Anonymous user** — An opaque id in a cookie. No email, no password, no
 sharing. Owns Red spots.
 

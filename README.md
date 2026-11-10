@@ -36,8 +36,9 @@ connection. Set `ROUTING_PROVIDER=mock` / `GEOCODING_PROVIDER=mock` in
 
 - Public routing and geocoding servers have no SLA. When they are slow the app
   shows "Search is slow right now" or a route error; try again.
-- The recommended route list often has a single entry in a small area, because
-  the public servers return few alternatives.
+- Recommend builds its own detours when the servers return too few
+  alternatives (ADR 0006). It still returns one route where there is no other
+  road to take, and then says "No better route found nearby".
 - On a phone, the map is fitted while the bottom sheet is open, so the ends of
   a long route can sit under the sheet or off the top. Collapse the sheet and
   pan to see them.

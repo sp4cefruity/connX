@@ -11,6 +11,7 @@ from app.auth import get_or_create_user
 from app.database import get_db
 from app.routers import routes as routes_router
 from app.routing import get_routing_provider
+from app.routing.base import RoutingProviderError
 from app.schemas import LonLat, RouteResult
 from tests.test_danger_distance_api import _recommend_body
 
@@ -34,6 +35,9 @@ class _TwoCandidates:
 
     async def get_alternative_routes(self, start, end, mode, count=3):
         return [_line(NEAR_LAT, 4.0), _line(FAR_LAT, 4.5)]
+
+    async def get_route_via(self, start, via, end, mode):
+        raise RoutingProviderError("this fake cannot route via a waypoint")
 
 
 class _FakeUser:
