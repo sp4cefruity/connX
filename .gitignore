@@ -93,3 +93,5 @@ tmp/
 .scratch/*
 .claude/*
 HANDOFF.md
+# Valhalla tiles and extracts (scripts/valhalla-setup.sh)
+valhalla/custom_files/

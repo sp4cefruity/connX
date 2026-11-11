@@ -12,7 +12,12 @@ import time
 from collections.abc import Callable
 
 from app.cache import TTLCache
-from app.routing.base import RoutingProviderError, RoutingQuotaError
+from app.routing.base import (
+    RoutingProviderError,
+    RoutingQuotaError,
+    RoutingRejectedError,
+    RoutingUnavailableError,
+)
 from app.schemas import LonLat, RouteResult, TravelMode
 
 log = logging.getLogger(__name__)
@@ -59,7 +64,9 @@ class FallbackRouting:
                 result = await getattr(self._primary, name)(*args)
             except RoutingProviderError as exc:
                 log.warning("primary routing failed (%s); using fallback", exc)
-                self._record_failure(exc)
+                # A request the provider refused (e.g. outside its map data) is not an outage.
+                if not isinstance(exc, RoutingRejectedError):
+                    self._record_failure(exc)
             else:
                 self._failures = 0
                 return result
@@ -82,13 +89,14 @@ class FallbackRouting:
         """Only the primary (ORS) can route around an area, so there is no fallback.
 
         "No route avoids that area" says nothing about the provider's health,
-        so only a quota refusal counts against the circuit breaker.
+        so only a quota refusal or an unreachable provider counts against the
+        circuit breaker.
         """
         if not self._primary_available():
             raise RoutingProviderError("primary routing is disabled and the fallback cannot avoid areas")
         try:
             result = await self._primary.get_route_avoiding(start, end, mode, avoid)
-        except RoutingQuotaError as exc:
+        except (RoutingQuotaError, RoutingUnavailableError) as exc:
             self._record_failure(exc)
             raise
         self._failures = 0

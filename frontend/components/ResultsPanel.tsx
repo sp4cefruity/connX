@@ -1,5 +1,6 @@
 "use client";
 
+import OpenInGoogleMaps from "@/components/OpenInGoogleMaps";
 import RouteFlags from "@/components/RouteFlags";
 import type { CardPlacement } from "@/lib/layout";
 import type { ScoredRoute } from "@/lib/types";
@@ -30,23 +31,32 @@ export default function ResultsPanel({ routes, selectedIndex, onSelect, placemen
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        {routes.map((r, i) => (
-          <button
-            key={i}
-            onClick={() => onSelect(i)}
-            className={`rounded-lg border p-3.5 text-left transition-colors ${
-              i === selectedIndex
-                ? "border-accent shadow-[0_0_0_1px_rgb(var(--c-accent))]"
-                : "border-border hover:border-accent/60"
-            } bg-panel-2`}
-          >
-            <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-dim">{r.tier}</div>
-            <div className="mb-2 font-body text-[14.5px] font-semibold">
-              {r.route.duration_min} min · {r.route.distance_km} km
+        {routes.map((r, i) => {
+          const recommended = r.tier === "recommended";
+          return (
+            <div
+              key={i}
+              className={`rounded-lg border bg-panel-2 transition-shadow ${
+                recommended
+                  ? "border-accent shadow-[0_0_14px_3px_rgb(var(--c-accent)/0.55),0_0_32px_8px_rgb(var(--c-accent)/0.25)]"
+                  : i === selectedIndex
+                    ? "border-accent"
+                    : "border-border hover:border-accent/60"
+              } ${i === selectedIndex ? "ring-1 ring-accent" : ""}`}
+            >
+              <button onClick={() => onSelect(i)} className="block w-full p-3.5 pb-2 text-left">
+                <div className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-dim">{r.tier}</div>
+                <div className="mb-2 font-body text-[14.5px] font-semibold">
+                  {r.route.duration_min} min · {r.route.distance_km} km
+                </div>
+                <RouteFlags view={r} />
+              </button>
+              <div className="flex px-3.5 pb-3">
+                <OpenInGoogleMaps route={r.route} label={`${r.tier} route`} />
+              </div>
             </div>
-            <RouteFlags view={r} />
-          </button>
-        ))}
+          );
+        })}
       </div>
 
       {routes[selectedIndex] && (

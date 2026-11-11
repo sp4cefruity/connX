@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import BottomSheet from "@/components/BottomSheet";
 import ComparisonSummary from "@/components/ComparisonSummary";
 import ConnXLogo from "@/components/ConnXLogo";
@@ -63,6 +63,20 @@ export default function PlannerPage() {
   // map flies there). TODO: once MapView exposes `onMoveEnd?: (center: LonLat) => void`,
   // feed it into setMapCenter so the bias tracks manual panning too.
   const [mapCenter, setMapCenter] = useState<LonLat>({ lon: 85.8245, lat: 20.2961 });
+
+  // The user's real position, fetched as soon as the planner opens so search can
+  // rank nearest-first from the first keystroke. Falls back to mapCenter if the
+  // permission is denied or slow.
+  const [userLocation, setUserLocation] = useState<LonLat | null>(null);
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setUserLocation({ lon: pos.coords.longitude, lat: pos.coords.latitude }),
+      () => {},
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+    );
+  }, []);
+  const searchBias = userLocation ?? mapCenter;
 
   function selectResult(set: (e: Endpoint) => void, r: GeocodeResult) {
     const point = { lon: r.lon, lat: r.lat };
@@ -186,12 +200,13 @@ export default function PlannerPage() {
           </div>
           <LocationField
             label="Start"
-            bias={mapCenter}
+            bias={searchBias}
             placeholder="Current location"
             value={primaryStart.label}
             onChange={(label) => setPrimaryStart((p) => ({ ...p, label }))}
             onSelect={(r: GeocodeResult) => selectResult(setPrimaryStart, r)}
             showUseLocation
+            knownLocation={userLocation}
             onUseLocation={(loc) => {
               setPrimaryStart({ label: "Current location", point: loc });
               setMapCenter(loc);
@@ -199,7 +214,7 @@ export default function PlannerPage() {
           />
           <LocationField
             label="Destination"
-            bias={mapCenter}
+            bias={searchBias}
             placeholder="Where to?"
             value={primaryEnd.label}
             onChange={(label) => setPrimaryEnd((p) => ({ ...p, label }))}
@@ -214,7 +229,7 @@ export default function PlannerPage() {
           </div>
           <LocationField
             label="Start"
-            bias={mapCenter}
+            bias={searchBias}
             placeholder="Search location"
             value={compareStart.label}
             onChange={(label) => setCompareStart((p) => ({ ...p, label }))}
@@ -222,7 +237,7 @@ export default function PlannerPage() {
           />
           <LocationField
             label="Destination"
-            bias={mapCenter}
+            bias={searchBias}
             placeholder="Search location"
             value={compareEnd.label}
             onChange={(label) => setCompareEnd((p) => ({ ...p, label }))}
