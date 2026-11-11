@@ -11,11 +11,16 @@ a quiet "search is slow right now" state instead of an error.
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.cache import TTLCache
+from app.ratelimit import rate_limit
 from app.routing import get_routing_provider
 from app.routing.base import RoutingProvider, RoutingProviderError
 from app.schemas import GeocodeResult
 
-router = APIRouter(prefix="/api/geocode", tags=["geocode"])
+router = APIRouter(
+    prefix="/api/geocode",
+    tags=["geocode"],
+    dependencies=[Depends(rate_limit("search", "rate_limit_search_per_min"))],
+)
 
 GEOCODE_UNAVAILABLE_DETAIL = "search_slow"
 

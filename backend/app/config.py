@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:3000"
     session_secret: str = "change-me-in-production"
 
+    # Per-IP request limits, production only (app/ratelimit.py). Routing spends
+    # the shared ORS quota (40/min, 2,000/day); search fires as the user types.
+    rate_limit_routes_per_min: int = 10
+    rate_limit_search_per_min: int = 60
+
     # Overlap tolerance: how close counts as "the same road". Fixed, not
     # user-set, and deliberately separate from the user's danger distance
     # (ADR 0001).

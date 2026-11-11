@@ -53,6 +53,8 @@ def get_or_create_user(
             s.dumps(user.id),
             httponly=True,
             samesite="lax",
+            # HTTPS only once deployed; local dev runs on plain http.
+            secure=get_settings().environment != "development",
             max_age=60 * 60 * 24 * 365,
         )
 

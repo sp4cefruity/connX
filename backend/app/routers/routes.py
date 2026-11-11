@@ -8,6 +8,7 @@ from app.auth import get_or_create_user
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models import User
+from app.ratelimit import rate_limit
 from app.routers.red_spots import get_active_red_spots
 from app.routing import get_routing_provider
 from app.routing.base import RoutingProvider, RoutingProviderError
@@ -30,7 +31,11 @@ from app.services.overlap import compute_overlap
 from app.services.red_zone import build_red_zone_band
 from app.services.redspots import find_red_spot_hits
 
-router = APIRouter(prefix="/api/routes", tags=["routes"])
+router = APIRouter(
+    prefix="/api/routes",
+    tags=["routes"],
+    dependencies=[Depends(rate_limit("routes", "rate_limit_routes_per_min"))],
+)
 
 # Most extra routing calls one /recommend may spend on detours (ORS free tier
 # is 2,000 a day; the route cache absorbs repeats).

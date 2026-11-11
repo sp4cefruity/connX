@@ -3,10 +3,13 @@ Geocoding via Nominatim (OpenStreetMap's free geocoder).
 
 Nominatim's usage policy requires a descriptive User-Agent and caps
 usage at ~1 request/second — see NOMINATIM_USER_AGENT in config and the
-in-memory cache in app/routers/geocode.py. For higher volume, self-host
-Nominatim or switch to a commercial geocoder behind this same interface.
+in-memory cache in app/routers/geocode.py. Requests go out one at a time,
+and `min_interval_s` (1 s in production) spaces them to honour that cap. For
+higher volume, self-host Nominatim or switch to a commercial geocoder behind
+this same interface.
 """
 import asyncio
+import time
 
 import httpx
 
@@ -21,9 +24,28 @@ def _viewbox(lat: float, lon: float, d: float) -> str:
 
 
 class NominatimGeocoding:
-    def __init__(self, base_url: str, user_agent: str):
+    def __init__(self, base_url: str, user_agent: str, min_interval_s: float = 0.0):
         self.base_url = base_url.rstrip("/")
         self.user_agent = user_agent
+        self.min_interval_s = min_interval_s
+        self._lock = asyncio.Lock()
+        self._last_request = 0.0
+
+    async def _get(self, url: str, params: dict) -> httpx.Response:
+        """One request at a time, at least `min_interval_s` apart."""
+        async with self._lock:
+            wait = self._last_request + self.min_interval_s - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.get(url, params=params, headers={"User-Agent": self.user_agent})
+                    resp.raise_for_status()
+                    return resp
+            except httpx.HTTPError as exc:
+                raise RoutingProviderError(f"Nominatim request failed: {exc}") from exc
+            finally:
+                self._last_request = time.monotonic()
 
     async def geocode(
         self,
@@ -36,11 +58,14 @@ class NominatimGeocoding:
             return await self._search(query, limit)
 
         # Same idea as Photon: boxes of growing size around the user, merged and
-        # sorted nearest first; worldwide only if every box is empty.
-        outcomes = await asyncio.gather(
-            *(self._search(query, max(limit, 10), _viewbox(lat, lon, d)) for d in _RING_HALF_SPANS_DEG),
-            return_exceptions=True,
-        )
+        # sorted nearest first; worldwide only if every box is empty. Asked in
+        # turn, never in parallel (usage policy).
+        outcomes: list[list[GeocodeResult] | BaseException] = []
+        for d in _RING_HALF_SPANS_DEG:
+            try:
+                outcomes.append(await self._search(query, max(limit, 10), _viewbox(lat, lon, d)))
+            except Exception as exc:  # one failed box must not sink the others
+                outcomes.append(exc)
         if all(isinstance(o, BaseException) for o in outcomes):
             raise outcomes[0]
         found = [r for o in outcomes if not isinstance(o, BaseException) for r in o]
@@ -63,14 +88,7 @@ class NominatimGeocoding:
         if viewbox is not None:
             params["viewbox"] = viewbox
             params["bounded"] = 1
-        headers = {"User-Agent": self.user_agent}
-
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            try:
-                resp = await client.get(url, params=params, headers=headers)
-                resp.raise_for_status()
-            except httpx.HTTPError as exc:
-                raise RoutingProviderError(f"Nominatim request failed: {exc}") from exc
+        resp = await self._get(url, params)
 
         return [
             GeocodeResult(
@@ -85,14 +103,7 @@ class NominatimGeocoding:
     async def reverse_geocode(self, lon: float, lat: float) -> GeocodeResult | None:
         url = f"{self.base_url}/reverse"
         params = {"lon": lon, "lat": lat, "format": "jsonv2"}
-        headers = {"User-Agent": self.user_agent}
-
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            try:
-                resp = await client.get(url, params=params, headers=headers)
-                resp.raise_for_status()
-            except httpx.HTTPError as exc:
-                raise RoutingProviderError(f"Nominatim request failed: {exc}") from exc
+        resp = await self._get(url, params)
 
         data = resp.json()
         if "error" in data:

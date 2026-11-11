@@ -24,4 +24,6 @@ USER connx
 # Photon, LocationIQ, Nominatim), so the container needs outbound internet.
 # Self-hosted Valhalla is parked (ADR 0007) and is not part of this image.
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Hosts such as Render tell the container which port to listen on via $PORT;
+# docker compose leaves it unset and gets 8000.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

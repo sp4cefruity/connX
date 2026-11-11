@@ -92,7 +92,12 @@ def get_routing_provider() -> RoutingProvider:
     if settings.geocoding_provider == "mock":
         geocoding = MockGeocoding()
     else:
-        geocoding = NominatimGeocoding(settings.nominatim_base_url, settings.nominatim_user_agent)
+        geocoding = NominatimGeocoding(
+            settings.nominatim_base_url,
+            settings.nominatim_user_agent,
+            # OSM's policy caps public use at 1 request/second.
+            min_interval_s=0.0 if settings.environment == "development" else 1.0,
+        )
         if settings.geocoding_provider == "photon":
             # Photon first, then LocationIQ (if keyed), then Nominatim, which also
             # does reverse geocoding (ADR 0003).
