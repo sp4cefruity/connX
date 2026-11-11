@@ -168,7 +168,9 @@ export default function PlannerPage() {
         })}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <ConnXLogo size={26} />
+          <Link href="/" aria-label="ConnX home" className="rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+            <ConnXLogo size={26} />
+          </Link>
           <Link href="/" className="font-mono text-[11px] text-ink-dim hover:text-ink transition-colors">
             ← Home
           </Link>

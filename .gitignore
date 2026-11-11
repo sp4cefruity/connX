@@ -31,6 +31,9 @@ build/
 backend/.env
 frontend/.env.local
 
+# Vercel CLI: local project link
+.vercel
+
 # ===========================
 # Python
 # ===========================
