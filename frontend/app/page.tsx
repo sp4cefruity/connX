@@ -1,4 +1,5 @@
 import Link from "next/link";
+import BackendWake from "@/components/BackendWake";
 import ConnXLogo from "@/components/ConnXLogo";
 import HeroField from "@/components/HeroField";
 
@@ -31,6 +32,7 @@ const STRIP = [
 export default function LandingPage() {
   return (
     <>
+      <BackendWake silent />
       <header className="fixed inset-x-0 top-0 z-50 mix-blend-difference flex items-center justify-between px-5 py-6 sm:px-10">
         <ConnXLogo size={24} />
         <Link

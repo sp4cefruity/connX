@@ -3,6 +3,7 @@
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import BackendWake from "@/components/BackendWake";
 import BottomSheet from "@/components/BottomSheet";
 import ComparisonSummary from "@/components/ComparisonSummary";
 import ConnXLogo from "@/components/ConnXLogo";
@@ -156,6 +157,7 @@ export default function PlannerPage() {
   // Phones: map on top, bottom sheet below. Desktop (md+): side panel and map.
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-bg supports-[height:100dvh]:h-[100dvh] md:grid md:grid-cols-[360px_1fr] md:grid-rows-[minmax(0,1fr)]">
+      <BackendWake />
       <BottomSheet
         expanded={sheetExpanded}
         onExpandedChange={setSheetExpanded}

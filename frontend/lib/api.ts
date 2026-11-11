@@ -37,6 +37,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/**
+ * True once the backend answers its health check. The hosted backend sleeps
+ * when idle and takes up to a minute to wake; any request wakes it.
+ */
+export async function pingBackend(timeoutMs = 20000): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${API_URL}/api/health`, { signal: controller.signal, cache: "no-store" });
+    if (!res.ok) return false;
+    const body = await res.json();
+    return body?.status === "ok";
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Backend answers 503 when every geocoding provider failed or timed out. */
 export function isSearchSlowError(err: unknown): boolean {
   return err instanceof ApiError && err.status === 503;
