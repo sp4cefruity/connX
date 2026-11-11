@@ -112,7 +112,7 @@ def test_photon_parses_features_and_sends_bias(monkeypatch):
     res = run(photon.geocode("airport", limit=3, lat=20.3, lon=85.8))
 
     assert seen["path"] == "/api/"
-    assert seen["q"] == "airport" and seen["limit"] == "3"
+    assert seen["q"] == "airport" and "bbox" in seen
     assert seen["lat"] == "20.3" and seen["lon"] == "85.8"
     assert len(res) == 1  # feature with no name/street is skipped
     assert res[0].label == "Biju Patnaik International Airport"
@@ -149,23 +149,43 @@ _LOCAL3 = _feature("Esplanade Lane", 85.84, 20.28, "Bhubaneswar")
 _FAR = _feature("One Esplanade", 120.98, 14.54, "Pasay")
 
 
-def test_photon_searches_region_and_worldwide_with_bias(monkeypatch):
+def test_photon_searches_growing_rings_and_sorts_by_distance(monkeypatch):
     calls = []
+    near = _feature("Patia", 85.82, 20.35, "Bhubaneswar")
+    mid = _feature("Patia Mid", 86.5, 21.0, "Balasore")
 
     def handler(request: httpx.Request):
         p = dict(request.url.params)
         calls.append(p)
-        return httpx.Response(200, json=_fc(_LOCAL) if "bbox" in p else _fc(_FAR))
+        half = (float(p["bbox"].split(",")[2]) - float(p["bbox"].split(",")[0])) / 2
+        return httpx.Response(200, json=_fc(mid) if half > 5 else _fc(mid, near))
+
+    res = run(_photon_with_transport(monkeypatch, handler).geocode("patia", lat=20.26, lon=85.777))
+
+    assert len(calls) == 3 and all("bbox" in c for c in calls)
+    min_lon, min_lat, max_lon, max_lat = map(float, calls[0]["bbox"].split(","))
+    assert min_lon < 85.777 < max_lon and min_lat < 20.26 < max_lat
+    assert [r.label for r in res] == ["Patia", "Patia Mid"]
+
+
+def test_photon_never_goes_worldwide_when_a_ring_has_hits(monkeypatch):
+    calls = []
+
+    def handler(request: httpx.Request):
+        calls.append(dict(request.url.params))
+        return httpx.Response(200, json=_fc(_LOCAL) if "bbox" in request.url.params else _fc(_FAR))
 
     res = run(_photon_with_transport(monkeypatch, handler).geocode("esplanade", lat=20.26, lon=85.777))
+    assert [r.label for r in res] == ["Esplanade"]
+    assert all("bbox" in c for c in calls)
 
-    local_calls = [c for c in calls if "bbox" in c]
-    world_calls = [c for c in calls if "bbox" not in c]
-    assert len(local_calls) == 1 and len(world_calls) == 1
-    min_lon, min_lat, max_lon, max_lat = map(float, local_calls[0]["bbox"].split(","))
-    assert min_lon < 85.777 < max_lon and min_lat < 20.26 < max_lat
-    # Regional hits come first, worldwide fills the rest.
-    assert [r.label for r in res] == ["Esplanade", "One Esplanade"]
+
+def test_photon_goes_worldwide_only_when_every_ring_is_empty(monkeypatch):
+    def handler(request: httpx.Request):
+        return httpx.Response(200, json=_fc() if "bbox" in request.url.params else _fc(_FAR))
+
+    res = run(_photon_with_transport(monkeypatch, handler).geocode("esplanade", lat=20.26, lon=85.777))
+    assert [r.label for r in res] == ["One Esplanade"]
 
 
 def test_photon_sends_app_user_agent(monkeypatch):
@@ -203,22 +223,12 @@ def test_photon_drops_trailing_words_in_region_when_nothing_matches(monkeypatch)
         if "bbox" not in p:
             return httpx.Response(200, json=_fc(_FAR))
         local_queries.append(p["q"])
-        # Only the single-word query matches in the region.
         return httpx.Response(200, json=_fc(_LOCAL, _LOCAL2, _LOCAL3) if p["q"] == "esplanade" else _fc())
 
     res = run(_photon_with_transport(monkeypatch, handler).geocode("esplanade one mall", lat=20.26, lon=85.777))
 
-    assert local_queries == ["esplanade one mall", "esplanade one", "esplanade"]
-    # Trimmed regional hits are capped at 2 so worldwide matches still show.
-    assert [r.label for r in res] == ["Esplanade", "Esplanade Road", "One Esplanade"]
-
-
-def test_photon_exact_regional_matches_are_not_capped(monkeypatch):
-    def handler(request: httpx.Request):
-        return httpx.Response(200, json=_fc(_LOCAL, _LOCAL2, _LOCAL3) if "bbox" in request.url.params else _fc(_FAR))
-
-    res = run(_photon_with_transport(monkeypatch, handler).geocode("esplanade", lat=20.26, lon=85.777))
-    assert [r.label for r in res][:3] == ["Esplanade", "Esplanade Road", "Esplanade Lane"]
+    assert "esplanade" in local_queries
+    assert [r.label for r in res] == ["Esplanade Lane", "Esplanade Road", "Esplanade"]  # nearest first
 
 
 def test_photon_dedupes_same_place_from_both_searches(monkeypatch):
@@ -230,17 +240,17 @@ def test_photon_dedupes_same_place_from_both_searches(monkeypatch):
     assert len(res) == 1
 
 
-def test_photon_survives_one_failed_search(monkeypatch):
-    def region_down(request: httpx.Request):
-        if "bbox" in request.url.params:
+def test_photon_survives_one_failed_ring(monkeypatch):
+    def handler(request: httpx.Request):
+        if request.url.params["bbox"].startswith("85.2770"):  # tightest ring
             return httpx.Response(503)
-        return httpx.Response(200, json=_fc(_FAR))
+        return httpx.Response(200, json=_fc(_LOCAL))
 
-    res = run(_photon_with_transport(monkeypatch, region_down).geocode("esplanade", lat=20.26, lon=85.777))
-    assert [r.label for r in res] == ["One Esplanade"]
+    res = run(_photon_with_transport(monkeypatch, handler).geocode("esplanade", lat=20.26, lon=85.777))
+    assert [r.label for r in res] == ["Esplanade"]
 
 
-def test_photon_raises_when_both_searches_fail(monkeypatch):
+def test_photon_raises_when_all_searches_fail(monkeypatch):
     with pytest.raises(RoutingProviderError):
         run(_photon_with_transport(monkeypatch, lambda r: httpx.Response(503)).geocode("e", lat=20.26, lon=85.777))
 

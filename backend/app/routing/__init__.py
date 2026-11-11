@@ -8,6 +8,8 @@ from app.routing.nominatim import NominatimGeocoding
 from app.routing.ors import ORSRouting
 from app.routing.osrm import OSRMRouting
 from app.routing.photon import FallbackGeocoding, PhotonGeocoding
+# Valhalla is parked (ADR 0007): re-enable together with the branch below.
+# from app.routing.valhalla import ValhallaRouting
 from app.routing.wrappers import CachedRouting, FallbackRouting
 from app.schemas import GeocodeResult, LonLat, RouteResult, TravelMode
 
@@ -65,6 +67,15 @@ def get_routing_provider() -> RoutingProvider:
         routing = CachedRouting(
             routing, settings.route_cache_ttl_s, settings.route_cache_max_entries
         )
+        # Parked (ADR 0007): self-hosted Valhalla first, public OSRM as fallback.
+        # if settings.routing_provider == "valhalla":
+        #     valhalla = CachedRouting(
+        #         ValhallaRouting(settings.valhalla_base_url),
+        #         settings.route_cache_ttl_s,
+        #         settings.route_cache_max_entries,
+        #     )
+        #     routing = FallbackRouting(valhalla, routing)
+        # elif settings.routing_provider == "ors":
         if settings.routing_provider == "ors":
             if settings.ors_api_key:
                 # ORS first, OSRM when ORS errors or its free quota runs out (ADR 0005).

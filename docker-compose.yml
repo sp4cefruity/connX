@@ -33,6 +33,24 @@ services:
       db:
         condition: service_healthy
 
+  # PARKED (ADR 0007) — self-hosted Valhalla, kept for later:
+  #   docker compose --profile valhalla up --build
+  # Prepare the extract first with scripts/valhalla-setup.sh (see README). The
+  # backend does not depend on this service: when it is down or a point is
+  # outside the extract, the backend falls back to the public OSRM servers.
+  # valhalla:
+  #   image: ghcr.io/valhalla/valhalla-scripted:latest
+  #   restart: unless-stopped
+  #   profiles: ["valhalla"]
+  #   ports:
+  #     - "8002:8002"
+  #   environment:
+      # Builds tiles from the .osm.pbf in /custom_files on first start, then
+      # reuses them (use_tiles_ignore_pbf defaults to True).
+  #     server_threads: "4"
+  #   volumes:
+  #     - ./valhalla/custom_files:/custom_files
+
   # Optional: containerized frontend for a single-command full stack.
   # Off by default so `docker compose up` still gives the fast native
   # `npm run dev` workflow most contributors want day-to-day. Opt in with:

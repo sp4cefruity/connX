@@ -14,27 +14,33 @@ FallbackGeocoding (below) which drops to Nominatim on timeout/error
 Nominatim.
 """
 import asyncio
+import math
 
 import httpx
 
 from app.routing.base import RoutingProviderError
 from app.schemas import GeocodeResult
 
-# Photon's lat/lon bias is soft, and it needs every word of the query to match.
-# So "esplanade one mall" (OSM only knows the place as "Esplanade") found
-# nothing nearby and fell through to Manila and Gold Coast. When we know where
-# the map is, we also search a box around it (about +/-55 km), and if that box
-# has nothing we retry it with trailing words dropped.
-_REGION_HALF_SPAN_DEG = 0.5
+# Photon's lat/lon bias is soft: it happily returns a same-named place on
+# another continent. So when we know where the user is, we search boxes of
+# growing size around them (about 55 km, 330 km, 1000 km) in parallel, merge
+# the hits, and sort strictly by distance from the user. A worldwide search is
+# a last resort, used only when no box has anything.
+_RING_HALF_SPANS_DEG = (0.5, 3.0, 9.0)
 _MAX_TRIMMED_WORDS = 2
-# Regional hits that only matched a shortened query: keep a couple, but leave
-# room for worldwide matches of the full query (e.g. a user really after "new york").
-_MAX_TRIMMED_RESULTS = 2
+_MIN_POOL = 10  # fetch more than we show so distance sorting has something to sort
+_EARTH_RADIUS_KM = 6371.0
 
 
-def _region_bbox(lat: float, lon: float) -> str:
-    d = _REGION_HALF_SPAN_DEG
+def _bbox(lat: float, lon: float, half_span_deg: float) -> str:
+    d = half_span_deg
     return f"{lon - d:.4f},{lat - d:.4f},{lon + d:.4f},{lat + d:.4f}"
+
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    h = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2
+    return 2 * _EARTH_RADIUS_KM * math.asin(min(1.0, math.sqrt(h)))
 
 
 def _place_key(r: GeocodeResult) -> tuple[str, str]:
@@ -65,35 +71,33 @@ class PhotonGeocoding:
         if lat is None or lon is None:
             return await self._search(query, limit)
 
-        bbox = _region_bbox(lat, lon)
-        regional, worldwide = await asyncio.gather(
-            self._search(query, limit, lat, lon, bbox),
-            self._search(query, limit, lat, lon),
+        pool = max(limit, _MIN_POOL)
+        outcomes = await asyncio.gather(
+            *(self._search(query, pool, lat, lon, _bbox(lat, lon, d)) for d in _RING_HALF_SPANS_DEG),
             return_exceptions=True,
         )
-        if isinstance(regional, BaseException) and isinstance(worldwide, BaseException):
-            raise regional
-        # One side failing is not fatal; the other still answers.
-        if isinstance(regional, BaseException):
-            regional = []
-        if isinstance(worldwide, BaseException):
-            worldwide = []
+        if all(isinstance(o, BaseException) for o in outcomes):
+            raise outcomes[0]
+        # One ring failing is not fatal; the others still answer.
+        found = [r for o in outcomes if not isinstance(o, BaseException) for r in o]
 
-        trimmed = False
-        if not regional:
-            regional = await self._search_trimmed(query, limit, lat, lon, bbox)
-            trimmed = bool(regional)
-        if trimmed:
-            regional = regional[:_MAX_TRIMMED_RESULTS]
+        if not found:
+            found = await self._search_trimmed(query, pool, lat, lon, _bbox(lat, lon, _RING_HALF_SPANS_DEG[1]))
+        if not found:
+            found = await self._search(query, pool, lat, lon)
 
-        merged: list[GeocodeResult] = []
+        unique: list[GeocodeResult] = []
         seen: set[tuple[str, str]] = set()
-        for r in [*regional, *worldwide]:
+        for r in found:
             key = _place_key(r)
             if key not in seen:
                 seen.add(key)
-                merged.append(r)
-        return merged[:limit]
+                unique.append(r)
+        # Places named like the query first (so "patia" lists Patia before
+        # "RMD College Patia"), then nearest first.
+        q = query.strip().lower()
+        unique.sort(key=lambda r: (not r.label.lower().startswith(q), _distance_km(lat, lon, r.lat, r.lon)))
+        return unique[:limit]
 
     async def _search_trimmed(
         self, query: str, limit: int, lat: float, lon: float, bbox: str

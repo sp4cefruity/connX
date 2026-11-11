@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import RouteFlags from "@/components/RouteFlags";
 import type { CardPlacement } from "@/lib/layout";
+import OpenInGoogleMaps from "@/components/OpenInGoogleMaps";
 import type { ComparisonView, RouteResult } from "@/lib/types";
 
 /** Route A against Route B: the primary comparison view's summary card. */
@@ -30,12 +31,13 @@ function RouteStat({
   className?: string;
 }) {
   return (
-    <div className={`flex items-center gap-2 font-body text-[14.5px] font-semibold ${TONE[tone].text} ${className}`}>
+    <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 font-body text-[14.5px] font-semibold ${TONE[tone].text} ${className}`}>
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE[tone].dot}`} />
       <span>
         {route.duration_min} min · {route.distance_km} km
       </span>
       {children}
+      <OpenInGoogleMaps route={route} label={tone === "routeA" ? "Route A" : "Route B"} />
     </div>
   );
 }
@@ -51,12 +53,14 @@ export default function ComparisonSummary({
   return (
     <section className={PLACEMENT_CLASS[placement]}>
       <div className="mb-2 font-mono text-[10px] uppercase tracking-wider text-ink-dim">Your route vs theirs</div>
-      <RouteStat route={route} tone="routeA" className="mb-1">
-        {overlap.percentage > 0 && (
-          <span className="ml-1 font-mono text-[11.5px] font-normal text-overlap">{overlap.percentage}% shared</span>
-        )}
-      </RouteStat>
+      <RouteStat route={route} tone="routeA" className={overlap.percentage > 0 ? "mb-0.5" : "mb-1"} />
+      {overlap.percentage > 0 && (
+        <div className="mb-1 pl-3.5 font-mono text-[11.5px] text-overlap">{overlap.percentage}% shared</div>
+      )}
       <RouteStat route={comparison_route} tone="routeB" className="mb-2.5" />
+      <p className="mb-2 font-mono text-[10.5px] text-ink-dim">
+        Google may route slightly differently from connX.
+      </p>
       <RouteFlags view={view} />
     </section>
   );

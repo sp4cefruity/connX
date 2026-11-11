@@ -21,10 +21,12 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg2://connx:connx@localhost:5432/connx"
 
-    routing_provider: str = "ors"  # "ors" (OSRM fallback) | "osrm" | "mock"
+    routing_provider: str = "ors"  # "ors" (OSRM fallback) | "osrm" | "mock"  ("valhalla" is parked, ADR 0007)
     # OpenRouteService free tier: 2,000 directions/day, 40/min. Without a key
     # "ors" quietly degrades to OSRM only (ADR 0005).
     ors_api_key: str = ""
+    # Parked (ADR 0007): self-hosted Valhalla.
+    # valhalla_base_url: str = "http://localhost:8002"
     ors_base_url: str = "https://api.openrouteservice.org"
     route_cache_ttl_s: float = 3600.0
     route_cache_max_entries: int = 500

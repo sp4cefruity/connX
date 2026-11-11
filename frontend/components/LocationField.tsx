@@ -21,6 +21,8 @@ interface LocationFieldProps {
   onSelect: (result: GeocodeResult) => void;
   showUseLocation?: boolean;
   onUseLocation?: (loc: LonLat) => void;
+  /** Position already fetched by the page; "Use my location" reuses it instead of asking again. */
+  knownLocation?: LonLat | null;
 }
 
 export default function LocationField({
@@ -32,6 +34,7 @@ export default function LocationField({
   onSelect,
   showUseLocation,
   onUseLocation,
+  knownLocation,
 }: LocationFieldProps) {
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [open, setOpen] = useState(false);
@@ -206,12 +209,7 @@ export default function LocationField({
   function useMyLocation() {
     if (!navigator.geolocation || !onUseLocation) return;
     setGeoLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const loc: LonLat = {
-          lon: pos.coords.longitude,
-          lat: pos.coords.latitude,
-        };
+    const resolve = async (loc: LonLat) => {
         // Reverse geocode to get a human-readable label
         try {
           const resp = await fetch(
@@ -237,7 +235,13 @@ export default function LocationField({
         clearTimeout(debounceRef.current);
         onUseLocation(loc);
         setGeoLoading(false);
-      },
+    };
+    if (knownLocation) {
+      void resolve(knownLocation);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => void resolve({ lon: pos.coords.longitude, lat: pos.coords.latitude }),
       () => {
         setGeoLoading(false);
       },

@@ -14,6 +14,16 @@ class RoutingProviderError(RuntimeError):
     """Raised when a provider fails (network, no route found, rate limit)."""
 
 
+class RoutingRejectedError(RoutingProviderError):
+    """The provider answered, but refused this one request (e.g. a point outside
+    its map data, or no route). Says nothing about the provider's health, so
+    FallbackRouting falls back for the request without counting a failure."""
+
+
+class RoutingUnavailableError(RoutingProviderError):
+    """The provider could not be reached or errored (connection, timeout, 5xx)."""
+
+
 class RoutingQuotaError(RoutingProviderError):
     """The provider refused us for quota / auth reasons (HTTP 401, 403, 429).
 
