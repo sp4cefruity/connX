@@ -22,8 +22,16 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg2://connx:connx@db:5432/connx
-      ROUTING_PROVIDER: osrm
-      GEOCODING_PROVIDER: photon
+      # Provider settings can be overridden from the shell or a root .env file.
+      # ORS_API_KEY / LOCATIONIQ_API_KEY are optional: with no ORS key routing
+      # runs on public OSRM only; with no LocationIQ key search is Photon then
+      # Nominatim.
+      ROUTING_PROVIDER: ${ROUTING_PROVIDER:-ors}
+      ORS_API_KEY: ${ORS_API_KEY:-}
+      GEOCODING_PROVIDER: ${GEOCODING_PROVIDER:-photon}
+      LOCATIONIQ_API_KEY: ${LOCATIONIQ_API_KEY:-}
+      # OSM blocks placeholder contacts: set a real one for Nominatim/Photon.
+      NOMINATIM_USER_AGENT: "${NOMINATIM_USER_AGENT:-ConnX/0.1 (contact: your-real-email@yourdomain.com)}"
       ENVIRONMENT: development
       FRONTEND_ORIGIN: http://localhost:3000
       SESSION_SECRET: change-me-in-production
@@ -45,8 +53,8 @@ services:
   #   ports:
   #     - "8002:8002"
   #   environment:
-      # Builds tiles from the .osm.pbf in /custom_files on first start, then
-      # reuses them (use_tiles_ignore_pbf defaults to True).
+  #     # Builds tiles from the .osm.pbf in /custom_files on first start, then
+  #     # reuses them (use_tiles_ignore_pbf defaults to True).
   #     server_threads: "4"
   #   volumes:
   #     - ./valhalla/custom_files:/custom_files

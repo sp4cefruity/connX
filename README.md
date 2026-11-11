@@ -32,6 +32,34 @@ Open http://localhost:3000. Routing and search use public fair-use servers
 connection. Set `ROUTING_PROVIDER=mock` / `GEOCODING_PROVIDER=mock` in
 `backend/.env` to work offline with canned data.
 
+## Scope
+
+**Working today**
+
+- Compare two trips in driving, walking or cycling: overlap, red zone band,
+  encounters within the danger distance.
+- Red spots (circles Route A should avoid), saved per anonymous cookie user.
+- Recommended alternatives, ranked by time, distance, overlap, encounters and
+  red spot hits, with a hand-off to Google Maps.
+- Routing: OpenRouteService when `ORS_API_KEY` is set, otherwise (or when ORS
+  fails or runs out of quota) public OSRM servers, one per travel mode.
+- Search: Photon, then LocationIQ (if `LOCATIONIQ_API_KEY` is set), then
+  Nominatim. Nominatim also does reverse geocoding.
+- Light and dark themes, and a mobile bottom-sheet layout.
+
+**Parked (code kept, not wired in)**
+
+- Self-hosted Valhalla routing (ADR 0007, `backend/app/routing/valhalla.py`,
+  `scripts/valhalla-setup.sh`). It would remove the dependence on rationed
+  public routing servers. The commented-out `valhalla` service in
+  `docker-compose.yml` is for this.
+
+**Out of scope**
+
+- Departure times and schedules (spatial only), accounts or sharing (users are
+  anonymous), storing trips (only red spots are saved).
+- Hosting and deployment (see `docs/PRD.md`).
+
 ## Known issues
 
 - Public routing and geocoding servers have no SLA. When they are slow the app
@@ -46,8 +74,9 @@ connection. Set `ROUTING_PROVIDER=mock` / `GEOCODING_PROVIDER=mock` in
   pan to see them.
 - Encounters right next to an overlap stretch (the approach and the exit of a
   shared road) are still listed. Whether to hide them is an open design choice.
-- Docker (`docker compose up --build`) has not been re-run since the Photon and
-  per-mode routing changes.
+- The Docker setup (`docker compose up --build`) was last run before the
+  Photon, LocationIQ and per-mode routing changes. The compose file has been
+  updated to match, but treat it as untested until you have run it once.
 
 
 ## First-time setup
@@ -94,7 +123,14 @@ docker compose up --build
 ```
 
 - Backend: http://localhost:8000 (FastAPI docs at `/docs`)
-- Postgres: localhost:5432
+- Postgres: localhost:5432 (schema from `backend/init.sql`, data kept in the
+  `connx_db_data` volume)
+- The backend container needs internet access for routing and search.
+- Optional settings are read from your shell or a `.env` file next to
+  `docker-compose.yml`: `ORS_API_KEY`, `LOCATIONIQ_API_KEY`,
+  `NOMINATIM_USER_AGENT` (use a real contact address), `ROUTING_PROVIDER`
+  and `GEOCODING_PROVIDER`. Without keys it runs on public OSRM, Photon and
+  Nominatim.
 - Frontend stays native by default for a fast dev loop; add the optional containerized frontend with:
 
 ```bash
