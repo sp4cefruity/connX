@@ -1,6 +1,7 @@
 # ConnX — Product Requirements Document
 
-Status: draft v1 · Terms are defined in [`CONTEXT.md`](../CONTEXT.md).
+Status: v1.1 (hosted demo added, section 6.9) · Terms are defined in
+[`CONTEXT.md`](../CONTEXT.md).
 
 ## 1. Problem
 
@@ -16,12 +17,16 @@ how close will we pass".
    should stay out of.
 3. Polish the product to portfolio quality: a refined map, fast search, a good
    palette, light and dark themes, and a responsive layout.
-4. Everything runs locally and works end to end.
+4. Everything works end to end, and runs three ways: a hosted demo you open
+   from a link, Docker, and locally without Docker.
+5. The hosted demo costs nothing to run and is safe to leave public: it cannot
+   be used to drain the shared routing and search quotas.
 
 ## 3. Non-goals
 
-- Hosting and deployment (future work).
-- Accounts, sharing, cross-device sync, payments, scaling work.
+- Accounts, sharing, cross-device sync, payments.
+- Scaling beyond a demo: more than one backend process, shared caches or rate
+  limits, paid hosting tiers, monitoring and alerting.
 - Time: departure times, speeds and "could meet at the same time" logic.
 - Freeform polygon zones and shrinking zones.
 - Browser end-to-end test suite.
@@ -104,6 +109,32 @@ paths. The tool is used by one person at a time, who enters both trips.
 - FR25. Responsive layout: side panel on desktop, bottom sheet on mobile.
 - FR26. Real empty, loading and error states throughout.
 
+### 6.9 Hosting and ways to run (added in v1.1)
+- FR27. Three supported ways to run: the hosted demo (Vercel frontend, Render
+  backend in Docker, Neon Postgres, all on free tiers), `docker compose`, and
+  local with `run_all.py` (SQLite by default, or your own Postgres).
+- FR28. The hosted browser talks to one origin only. Next.js rewrites proxy
+  `/api/*` to the backend (`BACKEND_URL`), so the device cookie
+  (`SameSite=Lax`) is sent and no CORS is involved.
+- FR29. The free backend sleeps when idle. The landing page pings
+  `/api/health` in the background, and the planner shows a "Waking up the
+  server" notice while the backend is still starting.
+- FR30. In production only (`ENVIRONMENT` not `development`):
+  - Per-IP rate limits of 10 requests a minute on `/api/routes/*` and 60 on
+    `/api/geocode`, answered with `429` and `Retry-After`. The client IP is the
+    first `X-Forwarded-For` entry.
+  - The device cookie is `Secure`.
+  - `/docs`, `/redoc` and `/openapi.json` are off.
+  - The backend refuses to start if `SESSION_SECRET` or `DATABASE_URL` is still
+    the repo default.
+- FR31. Nominatim requests go out one at a time, at least a second apart in
+  production, with a User-Agent that names a real contact, to stay inside the
+  OSM usage policy.
+- FR32. Local and Docker runs behave as before: no rate limits, open CORS for
+  localhost, API docs available.
+- FR33. Red spots live in Postgres in the hosted demo, so they survive backend
+  restarts and redeploys.
+
 ## 7. API changes
 
 - `POST /api/routes/compare`: drop `sensitivity`; add `danger_distance_m`.
@@ -114,6 +145,9 @@ paths. The tool is used by one person at a time, who enters both trips.
 - `GET /api/geocode`: accepts optional viewport bias (`lat`, `lon`).
 - Config: per-mode routing base URLs; Photon base URL; fixed overlap
   tolerance (~25 m); remove `overlap_sensitivity_presets`.
+- v1.1: `/api/routes/*` and `/api/geocode` can answer `429` in production.
+  New settings `RATE_LIMIT_ROUTES_PER_MIN` and `RATE_LIMIT_SEARCH_PER_MIN`.
+  Frontend setting `BACKEND_URL` (build time) turns on the `/api/*` proxy.
 
 ## 8. Acceptance criteria
 
@@ -133,6 +167,14 @@ paths. The tool is used by one person at a time, who enters both trips.
    scoring tests; `next build` and lint pass.
 9. The README has screenshots (dark, plus one light) and setup steps that
    work.
+10. The hosted link loads the landing page and the planner, search returns
+    places, and compare and recommend return results through the proxy.
+11. A hosted Red spot survives a page reload and a backend restart.
+12. A hosted visit after the backend has slept recovers without an error.
+13. Exceeding the rate limit on the hosted site returns `429`.
+14. `docker compose --profile full up --build` brings up Postgres, the backend
+    and the frontend, and the planner works at http://localhost:3000.
+15. The hosted cookie is `Secure` and `/docs` is not served.
 
 ## 9. Testing and Definition of Done
 
@@ -140,7 +182,12 @@ paths. The tool is used by one person at a time, who enters both trips.
   overlap exclusion, threshold edges) and for the changed overlap and scoring
   behaviour.
 - Frontend: `next build` and lint pass.
+- Backend (v1.1): pytest for the rate limiter, the cookie `Secure` flag and
+  Nominatim's one-at-a-time requests.
 - Manual: run all three modes in the browser, in both themes.
+- Manual (v1.1): smoke-test the hosted link (acceptance 10-13, 15), including
+  "Use my location" and the Google Maps hand-off on a phone, and run the Docker
+  stack (acceptance 14).
 - README with screenshots. No browser E2E suite.
 
 ## 10. Suggested delivery order
@@ -165,3 +212,13 @@ paths. The tool is used by one person at a time, who enters both trips.
   covers it.
 - Anonymous cookie users lose Red spots if cookies are cleared. This is
   accepted.
+- Hosting on free tiers (v1.1): the Render backend sleeps after about 15 idle
+  minutes and takes up to a minute to wake (mitigated by FR29). Free-tier terms
+  can change.
+- Rate limits are in memory, per process, and reset on restart. `X-Forwarded-For`
+  can be forged by someone calling the backend's own URL directly; accepted for
+  a demo.
+- The `users` table gains a row for every cookieless visitor and is never
+  pruned.
+- "Use my location" calls Nominatim from the browser, outside the backend's
+  User-Agent, caching and spacing.

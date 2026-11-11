@@ -16,21 +16,18 @@ On a phone the side panel becomes a bottom sheet:
 
 <img src="docs/screenshots/mobile-light-sheet.png" alt="Mobile layout" width="280">
 
-## Quick start (no Docker, no Postgres)
+## Three ways to run ConnX
 
-```bash
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r backend/requirements.txt
-cp backend/.env.example backend/.env   # SQLite by default; Windows: copy
-cd frontend && npm ci && cd ..
-python run_all.py                  # backend :8000, frontend :3000
-```
+| | How | You need |
+|---|---|---|
+| **1. Hosted** | Open **https://connx3.vercel.app** | A browser |
+| **2. Docker** | `docker compose --profile full up --build`, then open http://localhost:3000 | Docker |
+| **3. Local** | `python run_all.py`, then open http://localhost:3000 | Python 3.12+ and Node 20+ |
 
-Open http://localhost:3000. Routing and search use public fair-use servers
-(routing.openstreetmap.de, Photon, Nominatim), so you need an internet
-connection. Set `ROUTING_PROVIDER=mock` / `GEOCODING_PROVIDER=mock` in
-`backend/.env` to work offline with canned data.
+Details for each are under [Running ConnX](#running-connx). Routing and search
+use public fair-use servers (routing.openstreetmap.de, Photon, Nominatim), so
+every option needs an internet connection. Set `ROUTING_PROVIDER=mock` and
+`GEOCODING_PROVIDER=mock` to work offline with canned data.
 
 ## Scope
 
@@ -46,6 +43,8 @@ connection. Set `ROUTING_PROVIDER=mock` / `GEOCODING_PROVIDER=mock` in
 - Search: Photon, then LocationIQ (if `LOCATIONIQ_API_KEY` is set), then
   Nominatim. Nominatim also does reverse geocoding.
 - Light and dark themes, and a mobile bottom-sheet layout.
+- A free-tier hosted demo (Vercel, Render, Neon) with per-IP rate limits, plus
+  Docker and local setups.
 
 **Parked (code kept, not wired in)**
 
@@ -58,12 +57,21 @@ connection. Set `ROUTING_PROVIDER=mock` / `GEOCODING_PROVIDER=mock` in
 
 - Departure times and schedules (spatial only), accounts or sharing (users are
   anonymous), storing trips (only red spots are saved).
-- Hosting and deployment (see `docs/PRD.md`).
+- Scaling beyond a demo: one backend process, in-memory caches and rate limits,
+  no monitoring or alerting (see `docs/PRD.md`).
 
 ## Known issues
 
 - Public routing and geocoding servers have no SLA. When they are slow the app
   shows "Search is slow right now" or a route error; try again.
+- The hosted backend runs on a free Render instance that sleeps after about 15
+  idle minutes and takes up to a minute to wake. The landing page wakes it in
+  the background, and the planner shows a "Waking up the server" notice while
+  it is still starting.
+- The hosted demo limits each IP address to 10 route requests and 60 searches
+  a minute (a `429` with a "Too many requests" message). The limits are held in
+  memory and reset when the backend restarts. They are off in Docker and local
+  runs.
 - Recommend builds its own detours when the servers return too few
   alternatives (ADR 0006). With an `ORS_API_KEY` it asks the router to keep out
   of Route B's road. On OSRM alone it can only steer with via points, which do
@@ -74,12 +82,12 @@ connection. Set `ROUTING_PROVIDER=mock` / `GEOCODING_PROVIDER=mock` in
   pan to see them.
 - Encounters right next to an overlap stretch (the approach and the exit of a
   shared road) are still listed. Whether to hide them is an open design choice.
-- The Docker setup (`docker compose up --build`) was last run before the
-  Photon, LocationIQ and per-mode routing changes. The compose file has been
-  updated to match, but treat it as untested until you have run it once.
+- "Use my location" calls Nominatim's reverse geocoder straight from the
+  browser, without the backend's User-Agent or cache.
+- Every visitor without a cookie adds a row to the `users` table; nothing
+  prunes it.
 
-
-## First-time setup
+## First-time setup (Docker and local)
 
 Versions are pinned so everyone gets identical packages.
 
@@ -87,6 +95,7 @@ Versions are pinned so everyone gets identical packages.
 
 - Python 3.12 (reference; matches the Docker image). 3.13 and 3.14 are verified too.
 - Node 20 or newer (`.nvmrc` says 20) with npm 10 or newer.
+- Docker, only for option 2.
 
 **Install** (from the repo root)
 
@@ -104,7 +113,7 @@ cd frontend && npm ci && cd ..
 
 ```bash
 cd backend && python -m pytest     # backend tests
-cd ../frontend && npm run lint && npm run build
+cd ../frontend && npm test && npm run lint && npm run build
 ```
 
 Use `npm ci` (not `npm install`) so the lockfile is never rewritten. When you
@@ -114,73 +123,136 @@ together.
 
 ## Running ConnX
 
-Three ways to run the stack - pick whichever fits your situation.
+### 1. Hosted: click the link
 
-### 1. Everything in Docker
+Open **https://connx3.vercel.app**. Nothing to install. The first request after
+a quiet spell can take up to a minute while the free backend wakes. Red spots
+are tied to your browser's cookie, so clearing cookies or switching browsers
+loses them.
+
+To run your own copy, see [Deploying your own copy](#deploying-your-own-copy).
+
+### 2. Docker
 
 ```bash
-docker compose up --build
+docker compose --profile full up --build
 ```
 
+- Frontend: http://localhost:3000 (the Next.js dev server in a container)
 - Backend: http://localhost:8000 (FastAPI docs at `/docs`)
 - Postgres: localhost:5432 (schema from `backend/init.sql`, data kept in the
   `connx_db_data` volume)
+- The containers run in development mode: no rate limits, `/docs` open, CORS
+  open to any localhost port.
 - The backend container needs internet access for routing and search.
 - Optional settings are read from your shell or a `.env` file next to
   `docker-compose.yml`: `ORS_API_KEY`, `LOCATIONIQ_API_KEY`,
   `NOMINATIM_USER_AGENT` (use a real contact address), `ROUTING_PROVIDER`
   and `GEOCODING_PROVIDER`. Without keys it runs on public OSRM, Photon and
   Nominatim.
-- Frontend stays native by default for a fast dev loop; add the optional containerized frontend with:
+- To keep the frontend native for a faster dev loop, leave out the profile:
+  `docker compose up --build` starts only Postgres and the backend, and you run
+  `cd frontend && npm run dev` yourself.
+
+### 3. Local, no Docker
+
+Zero infrastructure needed. SQLite just works because all spatial math runs in
+Python (Shapely), not in the database.
 
 ```bash
-docker compose --profile full up --build   # adds Next.js on :3000
+cp backend/.env.example backend/.env   # SQLite by default; Windows: copy
+python run_all.py                      # backend :8000, frontend :3000
 ```
 
-### 2. Postgres without Docker
-
-Install PostgreSQL locally, create a database, then point `backend/.env` at it:
-
-```env
-DATABASE_URL=postgresql+psycopg2://user:password@localhost:5432/connx
-```
-
-Apply the schema (optional - SQLAlchemy also auto-creates tables on startup):
-
-```bash
-psql -U user -d connx -f backend/init.sql
-```
-
-Then run the backend from `backend/`:
-
-```bash
-pip install -r requirements.txt
-python app/main.py
-```
-
-### 3. Local dev with no Docker and no Postgres (SQLite)
-
-Zero infrastructure needed - SQLite just works because all spatial math runs
-in Python (Shapely), not in the database:
-
-```bash
-python run_all.py    # starts backend (:8000) + frontend (:3000)
-```
-
-`run_all.py` checks DB reachability first and tells you exactly how to fix it
-if something's wrong. For SQLite-only mode, make sure `backend/.env` contains:
+Open http://localhost:3000. `run_all.py` checks DB reachability first and tells
+you exactly how to fix it if something is wrong. For SQLite-only mode, make
+sure `backend/.env` contains:
 
 ```env
 DATABASE_URL=sqlite:///./connx_dev.db
 ```
 
-(see `backend/.env.example`; copy it to `backend/.env` first, because the
-built-in default is Postgres).
+Copy `backend/.env.example` first, because the built-in default is Postgres.
+
+**With your own Postgres instead of SQLite.** Install PostgreSQL, create a
+database, then point `backend/.env` at it:
+
+```env
+DATABASE_URL=postgresql+psycopg2://user:password@localhost:5432/connx
+```
+
+The schema is optional (SQLAlchemy also creates the tables on startup):
+
+```bash
+psql -U user -d connx -f backend/init.sql
+```
+
+Then run `python run_all.py`, or the backend alone with
+`cd backend && python app/main.py`.
+
+## Deploying your own copy
+
+The hosted demo is three free services. The browser only ever talks to the
+Vercel site; Next.js proxies `/api/*` to the backend, so the device cookie is
+sent and CORS never comes into play.
+
+```
+browser -> Vercel (Next.js) --/api/*--> Render (FastAPI, Docker) --> Neon (Postgres)
+```
+
+**1. Neon (database).** Create a project and copy its connection string. The
+backend creates its tables on first start.
+
+**2. Render (backend).** New Web Service from this repo (or your fork):
+
+| Setting | Value |
+|---|---|
+| Runtime | Docker |
+| Root Directory | `backend` |
+| Branch | `main` |
+| Health Check Path | `/api/health` |
+| Instance type | Free |
+
+Environment variables:
+
+| Variable | Value |
+|---|---|
+| `ENVIRONMENT` | `production` |
+| `DATABASE_URL` | the Neon connection string |
+| `SESSION_SECRET` | a long random value (Render can generate one) |
+| `FRONTEND_ORIGIN` | your Vercel URL, no trailing slash (only matters for direct calls to the backend) |
+| `ROUTING_PROVIDER` / `ORS_API_KEY` | `ors` and your OpenRouteService key (optional) |
+| `GEOCODING_PROVIDER` / `LOCATIONIQ_API_KEY` | `photon` and your LocationIQ key (optional) |
+| `NOMINATIM_USER_AGENT` | `ConnX/0.1 (+<your repo URL>)`, a real contact, or OSM blocks you |
+| `RATE_LIMIT_ROUTES_PER_MIN`, `RATE_LIMIT_SEARCH_PER_MIN` | optional; default 10 and 60 per IP |
+
+With `ENVIRONMENT=production` the backend hides `/docs`, marks the cookie
+`Secure`, turns on the rate limits and spaces Nominatim calls one second apart.
+It refuses to start if `SESSION_SECRET` or `DATABASE_URL` is still the default
+from the repo, so a missing variable fails with a clear message in the log.
+A service created from a public repo URL does not redeploy on push; use
+**Manual Deploy**.
+
+**3. Vercel (frontend).**
+
+```bash
+cd frontend
+vercel link
+vercel env add BACKEND_URL production   # your Render URL, e.g. https://connx-api.onrender.com
+vercel deploy --prod
+```
+
+`BACKEND_URL` is read at build time, so redeploy after changing it. Without it
+(local development) the browser calls `NEXT_PUBLIC_API_URL` directly.
+
+**Check it:** `/api/health` on the Vercel URL returns `{"status":"ok"}`, search
+returns places, and a compare returns an overlap.
 
 ## Collaborating across machines
 
 In development mode the backend's CORS accepts **any** port on
 `localhost` / `127.0.0.1`, so nobody needs matching ports or manual
 `FRONTEND_ORIGIN` syncing - if your `npm run dev` lands on 3001 instead of
-3000, everything still works. Production builds lock CORS down to the exact
-`FRONTEND_ORIGIN`, so set that properly when deploying.
+3000, everything still works. Production locks CORS down to the exact
+`FRONTEND_ORIGIN`; the hosted setup avoids the question by proxying through
+one origin.
