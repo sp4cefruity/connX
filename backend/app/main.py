@@ -22,6 +22,11 @@ if _production and settings.session_secret == Settings.model_fields["session_sec
     # could be forged. Refuse to start rather than run that way.
     raise RuntimeError("SESSION_SECRET must be set to a random value outside development")
 
+if _production and "localhost" in settings.database_url:
+    # The code default points at a local Postgres; on a host it means the
+    # DATABASE_URL variable never arrived (missing, misnamed or not saved).
+    raise RuntimeError("DATABASE_URL is not set (still the localhost default); set it to the hosted Postgres URL")
+
 app = FastAPI(
     title="ConnX API",
     description="Route overlap detection & avoidance planning.",
