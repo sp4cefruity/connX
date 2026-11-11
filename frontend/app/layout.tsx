@@ -23,7 +23,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ConnX — Take the route that's yours",
+  title: "ConnX - connecting hearts",
   description:
     "Compare routes, spot overlaps, and avoid places you don't want to pass through.",
 };
