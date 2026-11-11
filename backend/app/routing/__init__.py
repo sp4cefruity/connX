@@ -3,6 +3,7 @@ from functools import lru_cache
 
 from app.config import get_settings
 from app.routing.base import RoutingProvider
+from app.routing.locationiq import LocationIQGeocoding
 from app.routing.mock import MockGeocoding, MockRouting
 from app.routing.nominatim import NominatimGeocoding
 from app.routing.ors import ORSRouting
@@ -93,14 +94,23 @@ def get_routing_provider() -> RoutingProvider:
     else:
         geocoding = NominatimGeocoding(settings.nominatim_base_url, settings.nominatim_user_agent)
         if settings.geocoding_provider == "photon":
-            # Photon for forward search, Nominatim fallback + reverse (ADR 0003).
+            # Photon first, then LocationIQ (if keyed), then Nominatim, which also
+            # does reverse geocoding (ADR 0003).
+            chain = geocoding
+            if settings.locationiq_api_key:
+                chain = FallbackGeocoding(
+                    LocationIQGeocoding(settings.locationiq_api_key, settings.locationiq_base_url),
+                    geocoding,
+                )
+            else:
+                log.warning("LOCATIONIQ_API_KEY is empty; search goes Photon -> Nominatim")
             geocoding = FallbackGeocoding(
                 PhotonGeocoding(
                     settings.photon_base_url,
                     settings.photon_timeout_s,
                     settings.nominatim_user_agent,
                 ),
-                geocoding,
+                chain,
             )
 
     return CompositeProvider(routing, geocoding)

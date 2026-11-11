@@ -15,6 +15,7 @@ Nominatim.
 """
 import asyncio
 import math
+import time
 
 import httpx
 
@@ -41,6 +42,18 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     p1, p2 = math.radians(lat1), math.radians(lat2)
     h = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2
     return 2 * _EARTH_RADIUS_KM * math.asin(min(1.0, math.sqrt(h)))
+
+
+def _rank_key(query: str, lat: float, lon: float):
+    """Nearer ring first; inside a ring, names starting with the query, then nearest."""
+    q = query.strip().lower()
+
+    def key(r: GeocodeResult):
+        d = _distance_km(lat, lon, r.lat, r.lon)
+        ring = next((i for i, span in enumerate(_RING_HALF_SPANS_DEG) if d <= span * 111), len(_RING_HALF_SPANS_DEG))
+        return (ring, not r.label.lower().startswith(q), d)
+
+    return key
 
 
 def _place_key(r: GeocodeResult) -> tuple[str, str]:
@@ -93,10 +106,7 @@ class PhotonGeocoding:
             if key not in seen:
                 seen.add(key)
                 unique.append(r)
-        # Places named like the query first (so "patia" lists Patia before
-        # "RMD College Patia"), then nearest first.
-        q = query.strip().lower()
-        unique.sort(key=lambda r: (not r.label.lower().startswith(q), _distance_km(lat, lon, r.lat, r.lon)))
+        unique.sort(key=_rank_key(query, lat, lon))
         return unique[:limit]
 
     async def _search_trimmed(
@@ -180,12 +190,19 @@ def _parse_feature(feature: dict) -> GeocodeResult | None:
 
 
 class FallbackGeocoding:
-    """Forward search tries `primary` (Photon); on provider error falls back to
-    `fallback` (Nominatim). Reverse geocoding always uses `fallback`."""
+    """Forward search tries `primary`; on provider error falls back to
+    `fallback`. Reverse geocoding always uses `fallback`.
 
-    def __init__(self, primary, fallback):
+    After the primary fails it is skipped for `cooldown_s`, so a dead Photon
+    costs one slow request, not a timeout on every keystroke.
+    """
+
+    def __init__(self, primary, fallback, cooldown_s: float = 60.0, clock=time.monotonic):
         self._primary = primary
         self._fallback = fallback
+        self._cooldown_s = cooldown_s
+        self._clock = clock
+        self._skip_until = 0.0
 
     async def geocode(
         self,
@@ -194,12 +211,12 @@ class FallbackGeocoding:
         lat: float | None = None,
         lon: float | None = None,
     ) -> list[GeocodeResult]:
-        try:
-            return await self._primary.geocode(query, limit, lat=lat, lon=lon)
-        except RoutingProviderError:
-            # Nominatim ignores the bias; if it also fails the error propagates
-            # and the endpoint reports "search is slow right now".
-            return await self._fallback.geocode(query, limit, lat=lat, lon=lon)
+        if self._clock() >= self._skip_until:
+            try:
+                return await self._primary.geocode(query, limit, lat=lat, lon=lon)
+            except RoutingProviderError:
+                self._skip_until = self._clock() + self._cooldown_s
+        return await self._fallback.geocode(query, limit, lat=lat, lon=lon)
 
     async def reverse_geocode(self, lon: float, lat: float) -> GeocodeResult | None:
         return await self._fallback.reverse_geocode(lon, lat)

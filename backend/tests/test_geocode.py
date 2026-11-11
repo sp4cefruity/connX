@@ -334,4 +334,59 @@ def test_endpoint_signals_slow_when_both_fail_and_does_not_cache():
     assert r.json()["detail"] == geocode_router.GEOCODE_UNAVAILABLE_DETAIL
 
     client.get("/api/geocode", params={"q": "cafe"})
-    assert len(photon.calls) == 2  # failure was not cached
+    assert len(nominatim.calls) == 2  # failure was not cached (Photon is in cooldown)
+
+
+# ---------- LocationIQ (second in the chain) ----------
+
+def _liq(monkeypatch, handler):
+    from app.routing.locationiq import LocationIQGeocoding
+
+    real_client = httpx.AsyncClient
+
+    def factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr("app.routing.locationiq.httpx.AsyncClient", factory)
+    return LocationIQGeocoding("k")
+
+
+def _item(name, lon, lat):
+    return {"display_place": name, "display_name": f"{name} {lon}, India", "lon": str(lon), "lat": str(lat)}
+
+
+def test_locationiq_sorts_nearest_first_with_one_bounded_request(monkeypatch):
+    calls = []
+
+    def handler(request: httpx.Request):
+        calls.append(dict(request.url.params))
+        return httpx.Response(200, json=[_item("Patia", 80.8, 24.2), _item("Patia", 85.82, 20.35)])
+
+    res = run(_liq(monkeypatch, handler).geocode("patia", lat=20.3, lon=85.8))
+    assert len(calls) == 1 and calls[0]["bounded"] == "1"
+    assert [(r.lon, r.lat) for r in res][0] == (85.82, 20.35)
+
+
+def test_locationiq_404_means_no_matches_then_worldwide(monkeypatch):
+    def handler(request: httpx.Request):
+        return httpx.Response(404, json={"error": "Unable to geocode"}) if "bounded" in request.url.params else httpx.Response(200, json=[_item("Far", 1, 2)])
+
+    assert [r.label for r in run(_liq(monkeypatch, handler).geocode("x", lat=20.3, lon=85.8))] == ["Far"]
+
+
+def test_locationiq_error_becomes_provider_error(monkeypatch):
+    with pytest.raises(RoutingProviderError):
+        run(_liq(monkeypatch, lambda r: httpx.Response(429)).geocode("x", lat=20.3, lon=85.8))
+
+
+def test_fallback_skips_failed_primary_during_cooldown():
+    now = [0.0]
+    primary, fallback = FakeGeocoder(fail=True, label="p"), FakeGeocoder(label="f")
+    chain = FallbackGeocoding(primary, fallback, cooldown_s=60, clock=lambda: now[0])
+    run(chain.geocode("a"))
+    run(chain.geocode("b"))
+    assert len(primary.calls) == 1 and len(fallback.calls) == 2
+    now[0] = 61
+    run(chain.geocode("c"))
+    assert len(primary.calls) == 2

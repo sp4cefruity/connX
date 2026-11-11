@@ -6,10 +6,18 @@ usage at ~1 request/second — see NOMINATIM_USER_AGENT in config and the
 in-memory cache in app/routers/geocode.py. For higher volume, self-host
 Nominatim or switch to a commercial geocoder behind this same interface.
 """
+import asyncio
+
 import httpx
 
 from app.routing.base import RoutingProviderError
+from app.routing.photon import _RING_HALF_SPANS_DEG, _rank_key
 from app.schemas import GeocodeResult
+
+
+def _viewbox(lat: float, lon: float, d: float) -> str:
+    # Nominatim wants left,top,right,bottom.
+    return f"{lon - d:.4f},{lat + d:.4f},{lon + d:.4f},{lat - d:.4f}"
 
 
 class NominatimGeocoding:
@@ -24,9 +32,37 @@ class NominatimGeocoding:
         lat: float | None = None,
         lon: float | None = None,
     ) -> list[GeocodeResult]:
-        # lat/lon bias is accepted for interface parity with Photon but unused here.
+        if lat is None or lon is None:
+            return await self._search(query, limit)
+
+        # Same idea as Photon: boxes of growing size around the user, merged and
+        # sorted nearest first; worldwide only if every box is empty.
+        outcomes = await asyncio.gather(
+            *(self._search(query, max(limit, 10), _viewbox(lat, lon, d)) for d in _RING_HALF_SPANS_DEG),
+            return_exceptions=True,
+        )
+        if all(isinstance(o, BaseException) for o in outcomes):
+            raise outcomes[0]
+        found = [r for o in outcomes if not isinstance(o, BaseException) for r in o]
+        if not found:
+            return await self._search(query, limit)
+
+        unique: list[GeocodeResult] = []
+        seen: set[tuple[str, str]] = set()
+        for r in found:
+            key = (r.label.lower(), (r.address or "").lower())
+            if key not in seen:
+                seen.add(key)
+                unique.append(r)
+        unique.sort(key=_rank_key(query, lat, lon))
+        return unique[:limit]
+
+    async def _search(self, query: str, limit: int, viewbox: str | None = None) -> list[GeocodeResult]:
         url = f"{self.base_url}/search"
-        params = {"q": query, "format": "jsonv2", "limit": limit, "addressdetails": 0}
+        params: dict[str, str | int] = {"q": query, "format": "jsonv2", "limit": limit, "addressdetails": 0}
+        if viewbox is not None:
+            params["viewbox"] = viewbox
+            params["bounded"] = 1
         headers = {"User-Agent": self.user_agent}
 
         async with httpx.AsyncClient(timeout=10.0) as client:

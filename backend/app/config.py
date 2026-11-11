@@ -36,9 +36,12 @@ class Settings(BaseSettings):
     osrm_walking_base_url: str = "https://routing.openstreetmap.de/routed-foot"
     osrm_cycling_base_url: str = "https://routing.openstreetmap.de/routed-bike"
 
-    geocoding_provider: str = "photon"  # "photon" (Nominatim fallback) | "nominatim" | "mock"
+    geocoding_provider: str = "photon"  # "photon" (LocationIQ then Nominatim fallback) | "nominatim" | "mock"
     photon_base_url: str = "https://photon.komoot.io"
-    photon_timeout_s: float = 3.0
+    photon_timeout_s: float = 2.0
+    # Second in the chain (Photon -> LocationIQ -> Nominatim); skipped when the key is empty.
+    locationiq_api_key: str = ""
+    locationiq_base_url: str = "https://us1.locationiq.com"
     nominatim_base_url: str = "https://nominatim.openstreetmap.org"
     nominatim_user_agent: str = "ConnX/0.1 (dev)"
 
